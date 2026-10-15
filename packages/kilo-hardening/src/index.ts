@@ -28,6 +28,14 @@ export namespace Hardening {
     return config.features[name]
   }
 
+  /**
+   * Directory name for config, data, cache and state ("kilo" upstream). The restricted build uses its own
+   * name so it never shares auth, sessions or settings with an upstream Kilo install on the same machine.
+   */
+  export function app() {
+    return active() ? config.identity.name : "kilo"
+  }
+
   /** True when a cloud or account surface must stay off. Shorthand used by the gates in upstream files. */
   export function off() {
     return active()

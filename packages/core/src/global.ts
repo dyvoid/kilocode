@@ -8,8 +8,9 @@ import { markNoIndex } from "./kilocode/spotlight" // kilocode_change
 import { ensureRealDir, resolveState } from "./kilocode/global" // kilocode_change
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
 
-const app = "kilo" // kilocode_change
+const app = Hardening.app() // kilocode_change - "kilo" upstream; the restricted-egress build uses its own dirs
 // kilocode_change start
 // Defensively strip newline characters from the resolved XDG paths.
 // If `$HOME` (or any `$XDG_*_HOME` override) has a trailing newline in

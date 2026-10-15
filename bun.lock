@@ -107,6 +107,7 @@
         "@effect/sql-sqlite-bun": "catalog:",
         "@ff-labs/fff-bun": "0.9.4",
         "@kilocode/kilo-gateway": "workspace:*",
+        "@kilocode/kilo-hardening": "workspace:*",
         "@kilocode/kilo-indexing": "workspace:*",
         "@kilocode/plugin": "workspace:*",
         "@kilocode/sandbox": "workspace:*",
