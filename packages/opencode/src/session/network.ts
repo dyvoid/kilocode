@@ -17,6 +17,7 @@ import { MCP } from "../mcp"
 import { zod } from "@opencode-ai/core/effect-zod"
 import { withStatics } from "@opencode-ai/core/schema"
 import z from "zod"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
 
 export namespace SessionNetwork {
   const log = Log.create({ service: "session.network" })
@@ -237,6 +238,7 @@ export namespace SessionNetwork {
   }
 
   export async function probe() {
+    if (Hardening.off()) return false // kilocode_change - restricted-egress build probes only the provider host
     return Promise.any(
       urls.map(async (url) => {
         if (await check(url)) return true

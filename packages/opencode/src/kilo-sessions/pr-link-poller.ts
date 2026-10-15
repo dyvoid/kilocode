@@ -18,6 +18,7 @@ import {
   urlRepo,
 } from "@/kilo-sessions/pr-link"
 import type { PrLink, SessionPrLink } from "@/kilo-sessions/pr-link"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 const log = Log.create({ service: "pr-link-poller" })
 
@@ -284,7 +285,7 @@ async function linksToRefresh(sessionId?: string): Promise<Map<string, SessionPr
 // serialize into a wait that grows with the count (each call is bounded by a
 // 10s host timeout).
 export async function refreshPrLink(opts?: { sessionId?: string; concurrency?: number }): Promise<void> {
-  if (!enabled()) return
+  if (!enabled() || Hardening.off()) return // restricted-egress build: no forge API polling
   const links = await linksToRefresh(opts?.sessionId)
   if (links.size === 0) return
 
@@ -332,7 +333,7 @@ export async function refreshPrLink(opts?: { sessionId?: string; concurrency?: n
 // default). Overlapping runs coalesce and the timer never holds the process
 // open. Returns a stop function.
 export function startPrLinkPoll(run: () => Promise<void>, opts?: { intervalMs?: number }): () => void {
-  if (!enabled()) return () => {}
+  if (!enabled() || Hardening.off()) return () => {}
   let running = false
   const tick = () => {
     if (running) return

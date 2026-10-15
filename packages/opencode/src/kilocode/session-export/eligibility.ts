@@ -1,4 +1,5 @@
 import { getAuthOrgId, type OrgSource, type OrgState } from "./org-sources"
+import { Hardening } from "@kilocode/kilo-hardening"
 export type { OrgState } from "./org-sources"
 
 let kill = false
@@ -14,7 +15,7 @@ export type EligibilityInput = {
 }
 
 export function isEligible(input: EligibilityInput): boolean {
-  if (kill) return false
+  if (kill || Hardening.off()) return false
   if (input.org?.type !== "personal") return false
   if (input.model.isFree !== true) return false
   if (input.model.api.npm !== "@kilocode/kilo-gateway") return false

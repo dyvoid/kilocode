@@ -7,6 +7,7 @@ import { ProviderError } from "@/provider/error"
 import { errorMessage } from "@/util/error"
 import { ProxyEnv } from "@/util/proxy-env"
 import { isRecord } from "@/util/record"
+import { permitUrl } from "@kilocode/kilo-hardening" // kilocode_change
 
 export const PROTOCOL_HEADER = "responses_websockets=2026-02-06"
 export const MESSAGE_TOO_BIG_CLOSE_CODE = 1009
@@ -88,6 +89,7 @@ export function connectResponsesWebSocket(options: ConnectResponsesWebSocketOpti
         ? undefined
         : ProxyEnv.getProxyForUrl(options.url.replace(/^wss:/, "https:").replace(/^ws:/, "http:"))
     const connect = { headers, ...(proxy ? { proxy } : {}) }
+    permitUrl("app", options.url, "ws") // kilocode_change - the ws package bypasses the in-process guard under Bun
     const socket = new WebSocket(options.url, connect)
     const timeout = options.timeout
       ? setTimeout(() => {

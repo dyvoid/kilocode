@@ -36,6 +36,7 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
 
 type State = {
   hooks: Hooks[]
@@ -177,7 +178,7 @@ const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
-        for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
+        for (const plugin of flags.disableDefaultPlugins || Hardening.off() ? [] : internalPlugins(flags)) { // kilocode_change - restricted-egress build loads no auth/provider plugins
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
             catch: errorMessage,
