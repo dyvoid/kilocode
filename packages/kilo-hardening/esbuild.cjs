@@ -13,6 +13,11 @@ const modules = new Set(["net", "tls", "http", "https"])
 const plugin = {
   name: "kilo-hardening",
   setup(build) {
+    // Our own `vscode` imports get a view whose env.openExternal applies the link policy.
+    build.onResolve({ filter: /^vscode$/ }, (args) => {
+      if (args.importer.startsWith(src + path.sep)) return undefined
+      return { path: path.join(shims, "vscode.cjs") }
+    })
     build.onResolve({ filter: /^(node:)?(net|tls|http|https)$/ }, (args) => {
       // The shims and the guard itself need the real modules.
       if (args.importer.startsWith(src + path.sep)) return undefined
@@ -26,5 +31,7 @@ const plugin = {
 module.exports = {
   plugin,
   inject: [path.join(shims, "globals.ts")],
+  // Webview bundles: switches src/ui.ts to the restricted UI.
+  define: { __KILO_HARDENED__: "true" },
   activate: path.join(src, "node", "activate.ts"),
 }

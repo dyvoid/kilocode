@@ -1,3 +1,4 @@
+import { Hardening } from "@kilocode/kilo-hardening"
 /**
  * Build the Content-Security-Policy connect-src directive value.
  * If a port is specified, restricts connections to that port.
@@ -36,7 +37,8 @@ export function buildCspString(
     `worker-src ${cspSource}`,
     `font-src ${cspSource}`,
     `connect-src ${cspSource} ${connectSrc}`,
-    `img-src ${cspSource} data: https:`,
+    // Restricted-egress build: no remote images, so rendered model output cannot beacon data out.
+    `img-src ${cspSource} data:${Hardening.off() ? "" : " https:"}`,
     ...(frame ? [`frame-src ${frame}`] : []),
   ]
   return joinCspDirectives(directives)

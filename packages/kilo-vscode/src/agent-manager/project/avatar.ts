@@ -60,7 +60,7 @@ function file(name: string) {
 }
 
 async function download(name: string, done: () => void, log: (msg: string) => void) {
-  if (pending.has(name)) return
+  if (pending.has(name) || Hardening.off()) return // restricted-egress build: no GitHub avatars
   pending.add(name)
   try {
     // Request and accept PNG only, so the disk cache matches the image/png data URL.

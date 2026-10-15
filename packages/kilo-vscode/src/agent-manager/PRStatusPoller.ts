@@ -24,6 +24,7 @@ import type { SeedHost, Seeds } from "./pr/am-pr-seed"
 import type { PRResult, GhThread, GhReviewRequest, GhReview, GhTimelineItem } from "./pr/am-pr-types"
 import { withContext } from "./pr/pr-comment-context"
 import { oid } from "../shared/pr-comment-preview"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 interface PRStatusPollerOptions {
   getWorktrees: () => Worktree[]
@@ -115,7 +116,8 @@ export class PRStatusPoller {
   }
 
   setEnabled(enabled: boolean): void {
-    if (enabled) {
+    // Restricted-egress build: no `gh` calls to GitHub from the extension host.
+    if (enabled && !Hardening.off()) {
       if (this.active) return
       this.start()
       return
@@ -185,6 +187,7 @@ export class PRStatusPoller {
 
   /** Force-refresh a specific worktree immediately, bypassing the PR cache. */
   refresh(worktreeId: string, settle = false): void {
+    if (Hardening.off()) return
     this.clearRefreshTimers(worktreeId)
     const wt = this.options.getWorktrees().find((w) => w.id === worktreeId)
     if (wt) this.prCache.delete(this.key(wt.branch, wt.path))

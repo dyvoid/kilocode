@@ -15,6 +15,7 @@ import {
 import { connect, isIP, type Socket } from "node:net"
 import type { Duplex } from "node:stream"
 import { parse } from "./browser-policy"
+import { Hardening, permit } from "@kilocode/kilo-hardening"
 
 interface Options {
   lookup?: (host: string, signal: AbortSignal) => Promise<readonly { address: string; family: number }[]>
@@ -357,6 +358,8 @@ export class BrowserProxy {
       throw new Error("Browser proxy origin is not approved")
     }
     if (url.hash) throw new TypeError("Invalid proxy request URL")
+    // Restricted-egress build: the browser the model drives reaches only loopback and tools-scope hosts.
+    if (Hardening.off()) permit("tools", url.hostname, Number(url.port) || undefined, "browser")
     return url
   }
 
