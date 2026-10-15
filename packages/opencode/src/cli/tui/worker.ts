@@ -1,3 +1,4 @@
+import "@kilocode/kilo-hardening/install" // kilocode_change - restricted-egress guard; must stay the first import
 import { Server } from "@/server/server"
 import { InstanceRuntime } from "@/project/instance-runtime"
 import { Rpc } from "@/util/rpc"

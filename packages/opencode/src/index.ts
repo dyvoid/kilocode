@@ -1,3 +1,4 @@
+import "@kilocode/kilo-hardening/install" // kilocode_change - restricted-egress guard; must stay the first import
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 // kilocode_change - upstream account console intentionally omitted; KiloCli registers `kilo console` for local settings

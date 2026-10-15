@@ -1,3 +1,4 @@
+import "@kilocode/kilo-hardening/install" // restricted-egress guard; must stay the first import
 import { Config } from "./config"
 import { Chunker } from "./worker/chunks"
 import { handleEvent } from "./worker/handlers"

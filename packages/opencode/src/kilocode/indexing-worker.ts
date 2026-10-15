@@ -1,3 +1,4 @@
+import "@kilocode/kilo-hardening/install" // restricted-egress guard; must stay the first import
 import type { CodeIndexManager } from "@kilocode/kilo-indexing/engine"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { format } from "node:util"
