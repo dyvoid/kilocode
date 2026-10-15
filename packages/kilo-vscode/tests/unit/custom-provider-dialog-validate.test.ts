@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { validateCustomProvider } from "../../webview-ui/src/components/settings/CustomProviderValidation"
 import type { FormState } from "../../webview-ui/src/components/settings/CustomProviderValidation"
+import { validateEndpoint } from "@kilocode/kilo-hardening/validate"
 
 // Simple translator that returns the key so tests can assert on key names
 const t = (key: string) => key
@@ -307,5 +308,21 @@ describe("validateCustomProvider – variant name validation", () => {
     expect(m1.modalities).toEqual({ input: ["text", "image"] })
     expect(m2.reasoning).toBe(true)
     expect(m2.modalities).toBeUndefined()
+  })
+})
+
+describe("validateCustomProvider – restricted-egress allowlist", () => {
+  it("rejects a base URL outside the build's allowlist with the allowlist message", () => {
+    const out = validateCustomProvider({ ...args(base()), endpoint: (url) => validateEndpoint(url) })
+    expect(out.result).toBeUndefined()
+    expect(out.errors.baseURL).toContain("example.com is not on this build's allowlist")
+  })
+
+  it("accepts a loopback base URL", () => {
+    const form = base()
+    form.baseURL = "http://127.0.0.1:1234/v1"
+    const out = validateCustomProvider({ ...args(form), endpoint: (url) => validateEndpoint(url) })
+    expect(out.errors.baseURL).toBeUndefined()
+    expect(out.result?.config.options.baseURL).toBe("http://127.0.0.1:1234/v1")
   })
 })

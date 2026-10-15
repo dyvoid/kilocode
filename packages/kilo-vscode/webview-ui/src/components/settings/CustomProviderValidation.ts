@@ -35,6 +35,8 @@ type ValidateArgs = {
   existingProviderIDs: Set<string>
   /** Preserved env vars from the existing provider config (edit mode only) */
   existingEnv?: string[]
+  /** Extra base URL check (restricted-egress build: the allowlist). Returns an error message or undefined. */
+  endpoint?: (url: string) => string | undefined
 }
 
 type ValidateResult = {
@@ -179,7 +181,7 @@ export function validateCustomProvider(input: ValidateArgs): ValidateResult {
     ? input.t("provider.custom.error.baseURL.required")
     : !/^https?:\/\//.test(baseURL)
       ? input.t("provider.custom.error.baseURL.format")
-      : undefined
+      : input.endpoint?.(baseURL)
 
   const seenModels = new Set<string>()
   const modelErrors = input.form.models.map((m) => checkModel(m, seenModels, input.t))

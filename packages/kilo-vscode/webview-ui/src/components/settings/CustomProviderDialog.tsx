@@ -35,6 +35,7 @@ import type {
   VariantEntry,
 } from "./CustomProviderModelCard"
 import { validateCustomProvider } from "./CustomProviderValidation"
+import { validateEndpoint } from "@kilocode/kilo-hardening/validate"
 import type { FormErrors, FormState, HeaderRow } from "./CustomProviderValidation"
 const DEBOUNCE_MS = 500
 const SEARCH_DEBOUNCE_MS = 150
@@ -491,6 +492,7 @@ const CustomProviderDialog = (props: CustomProviderDialogProps) => {
       disabledProviders: config().disabled_providers ?? [],
       existingProviderIDs: new Set(Object.keys(provider.providers())),
       existingEnv: props.existing?.config?.env,
+      endpoint: (url) => validateEndpoint(url),
     })
     setErrors(reconcile(output.errors))
     return output.result
