@@ -1,0 +1,88 @@
+# kilocode_change - new file
+# Restricted-egress build: checks that run on every pull request and push (see docs/HARDENING.md).
+name: hardening
+
+on:
+  pull_request:
+  push:
+    branches: [main, "claude/**", "hardened/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Hardening checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Fetch the upstream base tag
+        run: |
+          tag="$(cat packages/kilo-hardening/UPSTREAM)"
+          git fetch --no-tags https://github.com/Kilo-Org/kilocode "refs/tags/${tag}:refs/tags/upstream-${tag}"
+
+      - name: Hardening package (typecheck, unit tests)
+        working-directory: packages/kilo-hardening
+        run: |
+          bun run typecheck
+          bun test
+
+      - name: URL canary
+        working-directory: packages/kilo-hardening
+        run: bun script/canary.ts
+
+      - name: Patch inventory is current
+        working-directory: packages/kilo-hardening
+        run: bun script/inventory.ts --check
+
+      - name: Upstream changes are annotated
+        run: bun run script/check-opencode-annotations.ts --base "upstream-$(cat packages/kilo-hardening/UPSTREAM)"
+
+      - name: CLI (typecheck, hardening tests)
+        working-directory: packages/opencode
+        run: |
+          bun run typecheck
+          bun test ./test/kilocode/hardening
+
+      - name: Telemetry stays off
+        working-directory: packages/kilo-telemetry
+        run: bun test src/__tests__/hardened.test.ts
+
+      - name: VS Code extension (typecheck, lint, knip, unit tests, bundle)
+        working-directory: packages/kilo-vscode
+        run: |
+          bun run check-types
+          bun run check-types:webview
+          bun run lint
+          bun run knip
+          bun run test:unit
+          bun esbuild.js
+
+  egress:
+    name: Zero-egress integration test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      # A fresh network namespace has only a loopback interface: the CLI runs with no route to anywhere.
+      - name: Scripted session with no network
+        run: |
+          sudo env "PATH=$PATH" unshare --net sh -c '
+            ip link set lo up
+            cd packages/kilo-hardening
+            bun script/egress-test.ts
+          '

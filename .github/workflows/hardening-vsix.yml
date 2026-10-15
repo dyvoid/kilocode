@@ -1,0 +1,77 @@
+# kilocode_change - new file
+# Restricted-egress build: builds the CLI for every platform and one VSIX per platform with the
+# allowlist and provider defaults from the HARDENING_CONFIG secret, plus SHA-256 checksums.
+# Nothing is published: the VSIX files are workflow artifacts for IT-managed rollout (docs/INSTALL.md).
+name: hardening-vsix
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["hardened-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build VSIX packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: true
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: ./.github/actions/setup-sbom
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install vsce
+        run: bun install -g @vscode/vsce
+
+      # The committed hardening.config.json allows loopback only. The real allowlist and provider come
+      # from the HARDENING_CONFIG repository secret (the whole JSON file).
+      - name: Apply build configuration
+        env:
+          HARDENING_CONFIG: ${{ secrets.HARDENING_CONFIG }}
+        run: |
+          if [ -n "$HARDENING_CONFIG" ]; then
+            printf '%s' "$HARDENING_CONFIG" > packages/kilo-hardening/hardening.config.json
+          else
+            echo "::warning::HARDENING_CONFIG is not set; building with the committed loopback-only config"
+          fi
+          bun -e 'const { config, assertConsistent } = await import("./packages/kilo-hardening/src/index.ts"); assertConsistent(config); console.log(`identity ${config.identity.publisher}.${config.identity.name}, provider ${config.provider.baseURL}`)'
+
+      - name: Setup Zig for Linux sandbox helpers
+        run: |
+          curl --fail --location --retry 3 \
+            https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz \
+            --output "$RUNNER_TEMP/zig.tar.xz"
+          echo "473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
+
+      - name: Build CLI (all platforms)
+        run: ./packages/opencode/script/build.ts
+
+      - name: Build VSIX packages
+        working-directory: packages/kilo-vscode
+        run: bun script/build.ts
+
+      - name: Checksums
+        working-directory: packages/kilo-vscode/out
+        run: |
+          sha256sum *.vsix > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vsix
+          path: |
+            packages/kilo-vscode/out/*.vsix
+            packages/kilo-vscode/out/SHA256SUMS
+          if-no-files-found: error

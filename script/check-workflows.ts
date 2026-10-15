@@ -45,6 +45,8 @@ const active = new Set([
   "docs-check-links.yml",
   "docs-sync.yml",
   "generate.yml",
+  "hardening.yml", // kilocode_change - restricted-egress build checks
+  "hardening-vsix.yml", // kilocode_change - restricted-egress VSIX build
   "kilo-auto-close.yml",
   "nix-eval.yml",
   "nix-hashes.yml",
