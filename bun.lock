@@ -318,6 +318,20 @@
         "solid-js",
       ],
     },
+    "packages/kilo-hardening": {
+      "name": "@kilocode/kilo-hardening",
+      "version": "7.8.12",
+      "dependencies": {
+        "ipaddr.js": "catalog:",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/kilo-i18n": {
       "name": "@kilocode/kilo-i18n",
       "version": "7.8.12",
@@ -1710,6 +1724,8 @@
     "@kilocode/kilo-docs": ["@kilocode/kilo-docs@workspace:packages/kilo-docs"],
 
     "@kilocode/kilo-gateway": ["@kilocode/kilo-gateway@workspace:packages/kilo-gateway"],
+
+    "@kilocode/kilo-hardening": ["@kilocode/kilo-hardening@workspace:packages/kilo-hardening"],
 
     "@kilocode/kilo-i18n": ["@kilocode/kilo-i18n@workspace:packages/kilo-i18n"],
 
