@@ -12,7 +12,8 @@
     "./activate": "./src/node/activate.ts",
     "./node": "./src/node/index.ts",
     "./esbuild": "./esbuild.cjs",
-    "./validate": "./src/validate.ts"
+    "./validate": "./src/validate.ts",
+    "./ui": "./src/ui.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

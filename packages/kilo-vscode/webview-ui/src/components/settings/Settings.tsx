@@ -31,6 +31,7 @@ import SettingsSearchResults from "./SettingsSearchResults"
 import { SETTINGS_TABS, type SettingsTab } from "./settings-search"
 import { useSettingsSearch } from "./useSettingsSearch"
 import { ProjectBranchDialog } from "../../../agent-manager/ProjectBranchDialog"
+import { shown } from "@kilocode/kilo-hardening/ui"
 
 const DisplayTab = lazy(() => import("./DisplayTab"))
 const ProvidersTab = lazy(() => import("./ProvidersTab"))
@@ -438,10 +439,12 @@ const Settings: Component<SettingsProps> = (props) => {
             <Icon name="eye" />
             <span class="label">{language.t("settings.display.title")}</span>
           </Tabs.Trigger>
-          <Tabs.Trigger value="autocomplete" aria-label={language.t("settings.autocomplete.title")}>
-            <Icon name="code-lines" />
-            <span class="label">{language.t("settings.autocomplete.title")}</span>
-          </Tabs.Trigger>
+          <Show when={shown("autocomplete")}>
+            <Tabs.Trigger value="autocomplete" aria-label={language.t("settings.autocomplete.title")}>
+              <Icon name="code-lines" />
+              <span class="label">{language.t("settings.autocomplete.title")}</span>
+            </Tabs.Trigger>
+          </Show>
           <Tabs.Trigger value="notifications" aria-label={language.t("settings.notifications.title")}>
             <Icon name="circle-check" />
             <span class="label">{language.t("settings.notifications.title")}</span>
@@ -519,10 +522,12 @@ const Settings: Component<SettingsProps> = (props) => {
           <h3>{language.t("settings.display.title")}</h3>
           <DisplayTab />
         </Tabs.Content>
-        <Tabs.Content value="autocomplete">
-          <h3>{language.t("settings.autocomplete.title")}</h3>
-          <AutocompleteTab onNavigateToModels={() => onTabChange("models")} />
-        </Tabs.Content>
+        <Show when={shown("autocomplete")}>
+          <Tabs.Content value="autocomplete">
+            <h3>{language.t("settings.autocomplete.title")}</h3>
+            <AutocompleteTab onNavigateToModels={() => onTabChange("models")} />
+          </Tabs.Content>
+        </Show>
         <Tabs.Content value="notifications">
           <h3>{language.t("settings.notifications.title")}</h3>
           <NotificationsTab />

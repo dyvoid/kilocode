@@ -18,6 +18,7 @@ describe("hardening config layer", () => {
   test("a fresh install gets the build's provider and default model", () => {
     const { cfg, warnings } = run({})
     expect(cfg.enabled_providers).toEqual(["llm"])
+    expect(cfg.disabled_providers).toEqual(["kilo"])
     expect(cfg.provider?.llm).toMatchObject({
       npm: PROVIDER_NPM,
       name: "Corp LLM",

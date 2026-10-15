@@ -132,7 +132,10 @@ export function apply<T extends Shape>(
   }
   cfg.provider = providers
   cfg.enabled_providers = enabled
-  cfg.disabled_providers = (cfg.disabled_providers ?? []).filter((id) => !enabled.includes(id))
+  // "kilo" listed explicitly: the extension shows the Kilo Gateway card unless it is disabled.
+  cfg.disabled_providers = [
+    ...new Set([...(cfg.disabled_providers ?? []).filter((id) => !enabled.includes(id)), "kilo"]),
+  ]
 
   const first = Object.keys(build.provider.models)[0]
   const fallback = enabled.includes(build.provider.id) && first ? `${build.provider.id}/${first}` : undefined

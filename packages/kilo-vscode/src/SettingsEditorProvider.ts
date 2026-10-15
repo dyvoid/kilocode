@@ -4,6 +4,7 @@ import { resolvePanelProjectDirectory } from "./project-directory"
 import type { KiloConnectionService } from "./services/cli-backend"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
 import type { AgentManagerSettingsHandler } from "./kilo-provider/options"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 type PanelView = "settings" | "profile" | "indexing"
 
@@ -61,6 +62,7 @@ export class SettingsEditorProvider implements vscode.Disposable {
   }
 
   openPanel(view: PanelView, tab?: string, projectId?: string, subtab?: string, focus?: string): void {
+    if (view === "profile" && Hardening.off()) return // restricted-egress build: no Kilo account
     if (tab) this.tabs.set(view, tab)
     if (subtab) this.subtabs.set(view, subtab)
     if (focus) this.focuses.set(view, focus)

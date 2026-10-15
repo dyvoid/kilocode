@@ -45,6 +45,7 @@ import { isCursorHost } from "./utils"
 import { sameDirectory } from "./kilo-provider-utils"
 import { mcpAuth } from "./services/mcp-auth"
 import { showAuthUrl } from "./kilo-provider/mcp-oauth"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 let agentManager: AgentManagerProvider | undefined
 let caffeination: CaffeinationService | undefined
@@ -899,7 +900,7 @@ export async function activate(context: vscode.ExtensionContext) {
   )
 
   // Register autocomplete provider
-  void registerAutocompleteProvider(context, connectionService)
+  if (Hardening.feature("autocomplete")) void registerAutocompleteProvider(context, connectionService)
 
   // Register commit message generation
   registerCommitMessageService(context, connectionService)

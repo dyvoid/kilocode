@@ -453,6 +453,8 @@ function getWebviewsConfig() {
     sourcesContent: false,
     platform: "browser",
     logLevel: "silent",
+    // Restricted-egress build: switches @kilocode/kilo-hardening/ui to the restricted UI.
+    define: hardening.define,
     loader: {
       ".woff": "file",
       ".woff2": "file",

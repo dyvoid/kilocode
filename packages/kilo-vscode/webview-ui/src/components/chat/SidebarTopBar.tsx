@@ -13,6 +13,7 @@ import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
 import { TelemetryEventName } from "../../../../src/services/telemetry/types"
+import { hardened } from "@kilocode/kilo-hardening/ui"
 
 export interface SidebarTopBarProps {
   onNewTask: () => void
@@ -43,7 +44,7 @@ export const SidebarTopBar: Component<SidebarTopBarProps> = (props) => {
   const open = (type: "openAgentManager" | "openMarketplacePanel" | "openProfilePanel" | "openSettingsPanel") =>
     vscode.postMessage({ type })
 
-  const actions: Action[] = [
+  const all: Action[] = [
     { key: "newTask", icon: "plus", button: "new_task", run: () => props.onNewTask() },
     { key: "history", icon: "history", button: "history", run: () => props.onHistory() },
     { key: "agentManager", icon: "organization", button: "agent_manager", run: () => open("openAgentManager") },
@@ -51,6 +52,8 @@ export const SidebarTopBar: Component<SidebarTopBarProps> = (props) => {
     { key: "profile", icon: "user", button: "profile", run: () => open("openProfilePanel") },
     { key: "settings", icon: "settings-gear", button: "settings", run: () => open("openSettingsPanel") },
   ]
+  // Restricted-egress build: no marketplace or Kilo account.
+  const actions = all.filter((action) => !hardened || (action.key !== "marketplace" && action.key !== "profile"))
 
   return (
     <div class="sidebar-top-bar" role="toolbar" aria-label={language.t("sidebar.topBar.label")}>

@@ -20,6 +20,7 @@ import { TelemetryEventName } from "./services/telemetry/types"
 import { mcpAuth } from "./services/mcp-auth"
 import { mcpRemoval } from "./services/mcp-removal"
 import { notifySignInResult } from "./kilo-provider/mcp-oauth"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 interface MarketplaceMessage {
   type?: string
@@ -65,6 +66,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
    * selected safely, such as in an ambiguous multi-root workspace.
    */
   openPanel(directory?: string | null): void {
+    if (Hardening.off()) return // restricted-egress build: no marketplace
     const project = directory === undefined ? this.resolveProject() : directory
     if (this.panel) {
       this.setProjectDirectory(project)

@@ -14,6 +14,7 @@ import { CloudImportDialog } from "../chat/CloudImportDialog"
 import SessionList from "./SessionList"
 import CloudSessionList from "./CloudSessionList"
 import type { SessionInfo } from "../../types/messages"
+import { hardened } from "@kilocode/kilo-hardening/ui"
 
 interface HistoryViewProps {
   onSelectSession: (id: string) => void
@@ -78,7 +79,9 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
   }
 
   function move(event: KeyboardEvent, current: Source) {
-    const sources: Source[] = worktreeIds() ? ["local", "cloud", "worktree"] : ["local", "cloud"]
+    const sources = (worktreeIds() ? ["local", "cloud", "worktree"] : ["local", "cloud"]).filter(
+      (source): source is Source => source !== "cloud" || !hardened,
+    )
     const index = sources.indexOf(current)
     const source =
       event.key === "Home"
@@ -118,6 +121,7 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
           >
             {language.t("session.tab.local")}
           </button>
+          <Show when={!hardened}>
           <button
             ref={cloud}
             id="history-tab-cloud"
@@ -133,6 +137,7 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
           >
             {language.t("session.tab.cloud")}
           </button>
+          </Show>
           <Show when={worktreeIds()}>
             <button
               ref={worktree}
@@ -180,7 +185,7 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
         aria-labelledby="history-tab-cloud"
         hidden={tab() !== "cloud"}
       >
-        {tab() === "cloud" && <CloudSessionList onSelectSession={selectCloudSession} />}
+        {tab() === "cloud" && !hardened && <CloudSessionList onSelectSession={selectCloudSession} />}
       </div>
       <Show when={worktreeIds()}>
         <div
