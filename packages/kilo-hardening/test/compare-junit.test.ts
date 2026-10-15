@@ -17,10 +17,10 @@ const upstream = outcomes(`<testsuites>
 </testsuites>`)
 
 group("compare-junit", () => {
-  test("only tests that pass upstream and fail in the fork are regressions", () => {
+  test("only tests that pass upstream and fail, skip or vanish in the fork are regressions", () => {
     expect(fork.get("a.test.ts > skipped")).toBe("skip")
     expect(compare(fork, upstream)).toEqual({
-      regressions: ["a.test.ts > broke", "c.test.ts > crashed"],
+      regressions: ["a.test.ts > broke", "a.test.ts > skipped", "c.test.ts > crashed"],
       missing: ["c.test.ts > crashed"],
       intended: [],
       shared: ["a.test.ts > env & flaky"],
@@ -31,7 +31,7 @@ group("compare-junit", () => {
   test("listed differences are reported as intended, not as regressions", () => {
     const allowed = expected("# header\na.test.ts > broke  # the build moves this file\n")
     const result = compare(fork, upstream, allowed)
-    expect(result.regressions).toEqual(["c.test.ts > crashed"])
+    expect(result.regressions).toEqual(["a.test.ts > skipped", "c.test.ts > crashed"])
     expect(result.intended).toEqual(["a.test.ts > broke"])
   })
 
@@ -39,5 +39,20 @@ group("compare-junit", () => {
     const a = outcomes(`<testcase classname="p" name="allows [/tmp/opencode-test-data-13950/config]"/>`)
     const b = outcomes(`<testcase classname="p" name="allows [/tmp/opencode-test-data-20417/config]"/>`)
     expect([...a.keys()]).toEqual([...b.keys()])
+  })
+
+  test("ids carry package, file and describe chain; Bun writes classname before file", () => {
+    const xml = `<testcase name="t" classname="group" time="0" file="test/x.test.ts" line="3"/>`
+    expect([...outcomes(xml, new Map(), "packages_opencode").keys()]).toEqual(["packages_opencode:test/x.test.ts > group > t"])
+    expect([...outcomes(`<testcase name="t" classname="" file="test/x.test.ts"/>`).keys()]).toEqual(["test/x.test.ts > t"])
+  })
+
+  test("numbers that are part of a name are not merged", () => {
+    const xml = `<testcase classname="dates" name="year 2024"/><testcase classname="dates" name="year 2025"><failure/></testcase>`
+    expect(outcomes(xml).size).toBe(2)
+  })
+
+  test("a reason separator inside the id does not cut it", () => {
+    expect([...expected("a > data-# case # # why\n")]).toEqual(["a > data-# case #"])
   })
 })

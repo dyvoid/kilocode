@@ -32,14 +32,21 @@ export function ensureTag(tag: string, url = UPSTREAM_URL) {
 
 export type Patch = { sha: string; subject: string }
 
-/** Commits on `head` since the upstream base, oldest first. */
-export function patches(base: string, head = "HEAD"): Patch[] {
-  const out = git(["log", "--reverse", "--format=%H%x09%s", `${base}..${head}`]).out
+export const PREFIX = "[hardened]"
+
+/** Commits on `head` since the upstream base, oldest first, without merges. */
+export function commits(base: string, head = "HEAD"): Patch[] {
+  const out = git(["log", "--reverse", "--no-merges", "--format=%H%x09%s", `${base}..${head}`]).out
   if (!out) return []
   return out.split("\n").map((line) => {
     const [sha, ...rest] = line.split("\t")
     return { sha, subject: rest.join("\t") }
   })
+}
+
+/** The [hardened] patch stack on `head`, oldest first. */
+export function patches(base: string, head = "HEAD"): Patch[] {
+  return commits(base, head).filter((item) => item.subject.startsWith(PREFIX))
 }
 
 /** Files a commit changes that already existed in the upstream base (i.e. edits to upstream files). */

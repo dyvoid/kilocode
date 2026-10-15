@@ -6,6 +6,10 @@ name: hardening-vsix
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Extension version (x.y.z). Must be higher than the installed one for updates to apply."
+        required: true
   push:
     tags: ["hardened-v*"]
 
@@ -31,7 +35,21 @@ jobs:
           node-version: "24"
 
       - name: Install vsce
-        run: bun install -g @vscode/vsce
+        run: bun install -g @vscode/vsce@4.0.0
+
+      # One version for the CLI and the VSIX: from the tag (hardened-v1.2.3 -> 1.2.3) or the run input.
+      - name: Version
+        env:
+          INPUT: ${{ inputs.version }}
+          REF: ${{ github.ref_name }}
+        run: |
+          version="${INPUT:-${REF#hardened-v}}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$version' is not x.y.z"
+            exit 1
+          fi
+          echo "KILO_VERSION=$version" >> "$GITHUB_ENV"
+          echo "building version $version"
 
       # The committed hardening.config.json is empty: defaults everywhere, no preconfigured provider and
       # an allowlist of loopback only. The optional HARDENING_CONFIG repository secret (the whole JSON
@@ -45,7 +63,8 @@ jobs:
           else
             echo "HARDENING_CONFIG is not set; building with the committed defaults (loopback only, no provider)"
           fi
-          bun -e 'const { config, assertConsistent } = await import("./packages/kilo-hardening/src/index.ts"); assertConsistent(config); console.log(`identity ${config.identity.publisher}.${config.identity.name}, provider ${config.provider?.baseURL ?? "none"}, app ${JSON.stringify(config.allow.app)}, tools ${JSON.stringify(config.allow.tools)}`)'
+          # Counts only: the job log of a public repository must not list internal host names.
+          bun -e 'const { config, assertConsistent, sandboxNotes } = await import("./packages/kilo-hardening/src/index.ts"); assertConsistent(config); console.log(`identity ${config.identity.publisher}.${config.identity.name}, provider ${config.provider ? "set" : "none"}, ${config.allow.app.length} app and ${config.allow.tools.length} tools entries`); for (const note of sandboxNotes(config)) console.log(`::warning::${note}`)'
 
       - name: Setup Zig for Linux sandbox helpers
         run: |

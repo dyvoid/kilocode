@@ -14,38 +14,61 @@ import path from "node:path"
 const root = path.join(import.meta.dir, "..", "..", "..")
 const list = path.join(import.meta.dir, "..", "reviewed-hosts.txt")
 
-/** Runtime source shipped in the CLI binary or the VSIX. Out-of-scope packages are not listed. */
+/**
+ * Packages that do not ship in the CLI binary or the VSIX, with the reason. Every other package's src/
+ * is scanned, so a package added upstream is covered until someone decides otherwise.
+ */
+export const EXCLUDED: Record<string, string> = {
+  "kilo-jetbrains": "separate product, not part of this build",
+  "kilo-console": "web console, not shipped",
+  "kilo-web-ui": "web app, not shipped",
+  "kilo-i18n": "translated UI strings; links in them go through the link policy",
+  "httpapi-codegen": "build-time code generator",
+  script: "build and release scripts",
+  client: "standalone client package, not bundled",
+  "sdk-next": "unreleased SDK, not bundled",
+}
+
+/** Runtime source shipped in the CLI binary or the VSIX. */
 export const SCOPE = [
-  "packages/opencode/src",
-  "packages/core/src",
-  "packages/kilo-gateway/src",
-  "packages/kilo-telemetry/src",
-  "packages/kilo-indexing/src",
-  "packages/kilo-memory/src",
-  "packages/kilo-sandbox/src",
-  "packages/kilo-hardening/src",
-  "packages/llm/src",
-  "packages/codemode/src",
-  "packages/server/src",
-  "packages/protocol/src",
-  "packages/plugin/src",
-  "packages/plugin-atomic-chat/src",
+  ...readdirSync(path.join(root, "packages"))
+    .filter((name) => !(name in EXCLUDED) && statSync(path.join(root, "packages", name, "src"), { throwIfNoEntry: false })?.isDirectory())
+    .map((name) => `packages/${name}/src`),
   "packages/sdk/js/src",
-  "packages/tui/src",
-  "packages/kilo-vscode/src",
   "packages/kilo-vscode/webview-ui",
-  "packages/kilo-ui/src",
-  "packages/ui/src",
-  "packages/session-ui/src",
 ]
 
 const SKIP_DIRS = new Set(["node_modules", "test", "tests", "__tests__", "i18n", "stories", "dist", "out", "fixtures"])
 const SKIP_FILE = /\.(test|spec|stories)\.[jt]sx?$/
 const EXTENSIONS = /\.(ts|tsx|js|mjs|cjs|json)$/
 
-// URL literals, plus quoted bare hostnames such as "api.kilo.ai" that code concatenates into URLs.
-const LINK = /\b(?:https?|wss?):\/\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)/gi
-const BARE = /["'`]((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:com|net|org|io|ai|dev|app|sh|co|cloud|xyz|run|so|gg|tech))["'`]/gi
+// URL literals (also with credentials, JSON-escaped slashes, or templated labels such as
+// `https://bedrock-runtime.${region}.amazonaws.com`: the labels after the last templated one are kept),
+// plus quoted bare hostnames such as "api.kilo.ai" or "api.kilo.ai:443" that code concatenates into URLs.
+const LABEL = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+const PART = "(?:[a-z0-9-]|\\$\\{[^}]*\\})+"
+const LINK = new RegExp(
+  `\\b(?:https?|wss?):(?:\\/\\/|\\\\/\\\\/)(?:[^@\\s"'\`/?#]+@)?(${PART}(?:\\.${PART})+)`,
+  "gi",
+)
+
+/**
+ * The fixed part of a possibly templated host: labels after the last `${...}`, if at least two. A
+ * template at the very end (`host.com${path}`) is the path, not part of the host. Dots inside a
+ * template (`${cfg.host}`) do not split labels.
+ */
+function fixed(host: string) {
+  const labels = host
+    .replace(/\$\{[^}]*\}/g, "\u0001")
+    .replace(/\u0001+$/, "")
+    .split(".")
+    .map((item) => item.replaceAll("\u0001", "${}"))
+  const last = labels.findLastIndex((item) => item.includes("${"))
+  const rest = labels.slice(last + 1)
+  return rest.length >= 2 && rest.every((item) => new RegExp(`^${LABEL}$`, "i").test(item)) ? rest.join(".") : undefined
+}
+const TLDS = "com|net|org|io|ai|dev|app|sh|co|cloud|xyz|run|so|gg|tech|me|tv|uk|de|fr|eu|us|ca|cn|jp|biz"
+const BARE = new RegExp(`["'\`]((?:${LABEL}\\.)+(?:${TLDS}))(?=["'\`:/])`, "gi")
 
 function walk(dir: string): string[] {
   const full = path.join(root, dir)
@@ -68,13 +91,23 @@ export function scan(dirs = SCOPE) {
     const text = readFileSync(path.join(root, file), "utf8")
     for (const pattern of [LINK, BARE])
       for (const match of text.matchAll(pattern)) {
-        const host = match[1].toLowerCase()
+        const host = fixed(match[1].toLowerCase())
+        if (!host) continue
         const files = found.get(host) ?? []
         if (!files.includes(file) && files.length < 3) files.push(file)
         found.set(host, files)
       }
   }
   return found
+}
+
+/** Runtime APIs the guard cannot wrap (read-only in Bun). Runtime source must not call them. */
+const UNGUARDED = /\bBun\s*(?:\.\s*fetch\b|\[\s*["'`]fetch["'`]\s*\])/
+
+/** Files in runtime source that call an API the guard cannot wrap. */
+export function unguarded(dirs = SCOPE) {
+  // The guard itself names it in comments.
+  return dirs.filter((dir) => dir !== "packages/kilo-hardening/src").flatMap(walk).filter((file) => UNGUARDED.test(readFileSync(path.join(root, file), "utf8")))
 }
 
 /** reviewed-hosts.txt: one host per line, optional "# note" after it; blank lines and comments ignored. */
@@ -106,6 +139,11 @@ if (import.meta.main) {
     writeFileSync(list, `${header}\n${lines.join("\n")}\n`)
     console.log(`reviewed-hosts.txt: ${lines.length} hosts`)
     process.exit(0)
+  }
+  const unwrapped = unguarded()
+  if (unwrapped.length > 0) {
+    console.error(`canary: Bun.fetch cannot be guarded; use fetch instead in:\n  ${unwrapped.join("\n  ")}`)
+    process.exit(1)
   }
   const unknown = unreviewed(found, known)
   if (unknown.length === 0) {

@@ -78,10 +78,15 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Install strace
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends strace
+
       # A fresh network namespace has only a loopback interface: the CLI runs with no route to anywhere.
+      # strace records every connect/send of the CLI and its children, so an attempt fails the test even
+      # though it cannot succeed here.
       - name: Scripted session with no network
         run: |
-          sudo env "PATH=$PATH" unshare --net sh -c '
+          sudo env "PATH=$PATH" EGRESS_REQUIRE_STRACE=1 unshare --net sh -c '
             ip link set lo up
             cd packages/kilo-hardening
             bun script/egress-test.ts
@@ -150,14 +155,24 @@ jobs:
           KILO_TEST_SHARD: ${{ matrix.shard }}/4
           KILO_TEST_FILE_TIMEOUT: "600000"
 
+      # One flat directory, each report named after its package (packages_opencode__junit.xml), so
+      # equal file names in different packages stay apart whatever the shard's layout.
+      - name: Collect JUnit reports
+        run: |
+          mkdir -p junit
+          find . -path ./node_modules -prune -o -path '*/.artifacts/unit/*.xml' -print | while read -r file; do
+            pkg="$(dirname "$(dirname "$(dirname "$file")")")"
+            pkg="${pkg#./}"
+            [ "$pkg" = "." ] && pkg="root"
+            cp "$file" "junit/${pkg//\//_}__$(basename "$file")"
+          done
+          ls junit
+
       - uses: actions/upload-artifact@v7
         with:
           name: junit-${{ matrix.side }}-${{ matrix.shard }}
-          include-hidden-files: true
           if-no-files-found: error
-          path: |
-            .artifacts/unit/*.xml
-            packages/*/.artifacts/unit/*.xml
+          path: junit/*.xml
 
   compare:
     name: No regressions against upstream
@@ -177,4 +192,4 @@ jobs:
         with:
           pattern: junit-upstream-*
           path: reports/upstream
-      - run: bun packages/kilo-hardening/script/compare-junit.ts reports/fork reports/upstream
+      - run: bun packages/kilo-hardening/script/compare-junit.ts reports/fork reports/upstream --shards 4

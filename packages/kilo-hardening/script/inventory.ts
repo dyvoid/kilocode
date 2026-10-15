@@ -18,7 +18,6 @@ export function table() {
   // Commit hashes change on every sync, so the table keys rows by subject and lists files only.
   // Patches that only add new files are left out: they cannot conflict with upstream.
   const rows = patches(base)
-    .filter((item) => item.subject.startsWith("[hardened]"))
     .map((item) => ({ item, files: upstreamFiles(item.sha, base) }))
     .filter((row) => row.files.length > 0)
     .map((row) => {

@@ -10,6 +10,7 @@ ai-gateway.kilo.ai  # Kilo AI gateway; kilo provider disabled, /kilo/* and /inde
 ai-gateway.vercel.sh
 ai.azure.com
 aiplatform.googleapis.com
+amazonaws.com  # Bedrock runtime URL template (bedrock-runtime.<region>.amazonaws.com); built-in providers disabled, guard blocks unless allowlisted
 api.anthropic.com
 api.apertis.ai
 api.bitbucket.org  # PR link poller; off when hardened
@@ -31,6 +32,8 @@ api.minimax.io
 api.minimaxi.com
 api.mistral.ai
 api.moonshot.ai
+api.moonshot.cn  # host comparison in provider transform, no connection
+api.moonshotai.cn  # host comparison in provider transform, no connection
 api.openai.com
 api.releases.hashicorp.com  # LSP download; KILO_DISABLE_LSP_DOWNLOAD forced
 api.together.xyz
@@ -77,6 +80,7 @@ git.run
 github.com  # ripgrep download refused when hardened; avatars not fetched; other uses are links
 gitlab.com  # GitLab auth plugin and PR poller; plugins not loaded, poller off
 gitlab.example.com
+golang.org  # module path in `go install golang.org/x/tools/gopls`; LSP downloads forced off, and the tools proxy/sandbox applies
 inference.baseten.co
 inference.do-ai.run
 ingest.kilosessions.ai  # cloud session ingest; needs a Kilo token, none can exist
@@ -93,6 +97,7 @@ mcp.exa.ai  # web search; denied until hardening.config.json enables exa (then a
 microsoft.github.io
 models.dev  # model catalog; KILO_DISABLE_MODELS_FETCH forced by install.ts
 my-models.openai.azure.com
+openai.azure.com  # Azure OpenAI base URL template (<resource>.openai.azure.com); built-in providers disabled, guard blocks unless allowlisted
 openai.com
 opencode.ai
 opencode.run
@@ -104,6 +109,7 @@ platform.openai.com
 raw.githubusercontent.com  # update channel / TUI parsers; autoupdate disabled, TUI not used by the extension
 reddit.com
 registry.npmjs.org  # npm installs refused when hardened (core/npm.ts); update check is TUI-only and disabled
+rep.googleapis.com  # Vertex AI regional endpoint template; built-in providers disabled, guard blocks unless allowlisted
 run-script.sh
 search.parallel.ai  # web search; denied until hardening.config.json enables parallel (then allowlisted)
 session.tab.cloud
@@ -112,6 +118,7 @@ sessionrunner.run
 setup-script.sh
 shelltool.run
 skillinject.run
+snowflakecomputing.com  # Snowflake Cortex base URL template; built-in providers and plugins disabled, guard blocks unless allowlisted
 stackoverflow.com
 supermassive-black-hole.kiloapps.io  # session export; eligibility() is false when hardened
 swagger.io
@@ -131,4 +138,5 @@ www.rfc-editor.org
 www.w3.org
 x.com
 xn--pitest-2nf.com
+z.ai  # model-search provider matching only, no connection
 zenmux.ai
