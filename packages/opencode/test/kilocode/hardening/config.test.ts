@@ -9,9 +9,9 @@ const build = parse({
   sandbox: true,
 })
 
-function run(cfg: Shape) {
+function run(cfg: Shape, available = true) {
   const warnings: { path: string; message: string; detail?: string }[] = []
-  return { cfg: apply(cfg, warnings, build), warnings }
+  return { cfg: apply(cfg, warnings, build, () => ({ available, reason: "no bubblewrap" })), warnings }
 }
 
 describe("hardening config layer", () => {
@@ -81,5 +81,33 @@ describe("hardening config layer", () => {
     expect(cfg.share).toBe("disabled")
     expect(cfg.autoupdate).toBe(false)
     expect(cfg.sandbox).toEqual({ enabled: true, network: "deny", allowed_hosts: ["llm.corp.example", "git.corp.example"] })
+  })
+
+  test("no sandbox backend leaves commands unsandboxed with a warning instead of failing every command", () => {
+    const { cfg, warnings } = run({}, false)
+    expect(cfg.sandbox).toBeUndefined()
+    expect(warnings).toEqual([expect.objectContaining({ path: "sandbox", detail: "no bubblewrap" })])
+  })
+
+  test("indexing runs only with a local or allowlisted embedder and vector store", () => {
+    const ok = run({
+      indexing: { enabled: true, provider: "ollama", vectorStore: "qdrant", qdrant: { url: "http://127.0.0.1:6333" } },
+    })
+    expect(ok.cfg.indexing?.enabled).toBe(true)
+    expect(ok.warnings).toEqual([])
+
+    const cloud = run({ indexing: { enabled: true, provider: "voyage", vectorStore: "qdrant" } })
+    expect(cloud.cfg.indexing?.enabled).toBe(false)
+    expect(cloud.warnings[0].path).toBe("indexing.provider")
+
+    const far = run({
+      indexing: { enabled: true, provider: "ollama", vectorStore: "qdrant", qdrant: { url: "https://qdrant.example.com" } },
+    })
+    expect(far.cfg.indexing?.enabled).toBe(false)
+    expect(far.warnings[0].path).toBe("indexing.qdrant.url")
+
+    const lance = run({ indexing: { enabled: true, provider: "ollama" } })
+    expect(lance.cfg.indexing?.enabled).toBe(false)
+    expect(lance.warnings[0].path).toBe("indexing.vectorStore")
   })
 })

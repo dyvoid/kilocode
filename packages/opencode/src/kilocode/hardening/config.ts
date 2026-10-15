@@ -2,6 +2,7 @@ import { config as baked, entries, validateEndpoint, type Config as Baked } from
 import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
 import { isIndexingPlugin } from "@kilocode/kilo-indexing/detect"
+import { backendSupport } from "@kilocode/sandbox"
 
 /** The only provider SDK the restricted build allows: bundled, so it never triggers an npm install. */
 export const PROVIDER_NPM = "@ai-sdk/openai-compatible"
@@ -34,6 +35,43 @@ export type Shape = {
   mcp?: Record<string, Mcp | { enabled: boolean }>
   instructions?: string[]
   skills?: { paths?: readonly string[]; urls?: readonly string[] }
+  experimental?: { image_generation?: boolean; [key: string]: unknown }
+  indexing?: {
+    enabled?: boolean
+    provider?: string
+    vectorStore?: string
+    ollama?: { baseUrl?: string }
+    "openai-compatible"?: { baseUrl?: string }
+    qdrant?: { url?: string }
+    [key: string]: unknown
+  }
+}
+
+/** Embedders that run against a host the build controls; every other one is a cloud service. */
+const EMBEDDERS = new Set(["ollama", "openai-compatible"])
+
+function indexing(cfg: Shape, warnings: Warning[], build: Baked) {
+  const item = cfg.indexing
+  if (!item?.enabled) return
+  const off = (path: string, message: string, detail?: string) => {
+    cfg.indexing = { ...item, enabled: false }
+    warnings.push({ path, message, ...(detail && { detail }) })
+  }
+  if (!item.provider || !EMBEDDERS.has(item.provider))
+    return off("indexing.provider", "Indexing disabled: use the ollama or openai-compatible embedder with a host on the allowlist.")
+  const endpoints = [
+    ["indexing.ollama.baseUrl", item.provider === "ollama" ? (item.ollama?.baseUrl ?? "http://localhost:11434") : undefined],
+    ["indexing.openai-compatible.baseUrl", item.provider === "openai-compatible" ? item["openai-compatible"]?.baseUrl : undefined],
+    ["indexing.qdrant.url", item.vectorStore === "qdrant" ? item.qdrant?.url : undefined],
+  ] as const
+  for (const [path, url] of endpoints) {
+    if (!url) continue
+    const problem = validateEndpoint(url, "app", build)
+    if (problem) return off(path, "Indexing disabled.", problem)
+  }
+  // LanceDB is installed from the npm registry on first use unless the build ships it (KILO_LANCEDB_PATH).
+  if ((item.vectorStore ?? "lancedb") === "lancedb" && !process.env.KILO_LANCEDB_PATH)
+    return off("indexing.vectorStore", 'Indexing disabled: LanceDB is not bundled with this build. Set "indexing.vectorStore" to "qdrant".')
 }
 
 function remote(value: string) {
@@ -60,7 +98,12 @@ function provider(cfg: Shape, build: Baked) {
  * decides the final provider set, sandbox and remote sources regardless of user, project or org config.
  * Every change that drops something the user configured is reported as a warning.
  */
-export function apply<T extends Shape>(cfg: T, warnings: Warning[], build: Baked = baked): T {
+export function apply<T extends Shape>(
+  cfg: T,
+  warnings: Warning[],
+  build: Baked = baked,
+  support: () => { available: boolean; reason?: string } = () => backendSupport({ mode: "deny", allowedHosts: [] }),
+): T {
   // Providers: the build's generic provider plus any user-defined OpenAI-compatible provider whose
   // base URL is on the allowlist. Everything else (built-in catalog providers, the Kilo gateway) is off.
   const rest = Object.entries(cfg.provider ?? {}).filter(([id]) => id !== build.provider.id)
@@ -106,12 +149,24 @@ export function apply<T extends Shape>(cfg: T, warnings: Warning[], build: Baked
   cfg.plugin = (cfg.plugin ?? []).filter(keep)
   if (cfg.plugin_origins) cfg.plugin_origins = cfg.plugin_origins.filter((item) => keep(item.spec))
 
+  // Image generation goes through the Kilo gateway; it stays off unless the build re-enables it.
+  if (!build.features.imageGeneration && cfg.experimental?.image_generation)
+    cfg.experimental = { ...cfg.experimental, image_generation: false }
+
   cfg.share = "disabled"
   cfg.autoshare = false
   cfg.autoupdate = false
 
-  // Agent commands run sandboxed (Linux/macOS) with network limited to the tools scope.
-  if (build.sandbox)
+  // Agent commands run sandboxed (Linux/macOS) with network limited to the tools scope. Where no backend
+  // is available (Windows, or Linux without bubblewrap) commands still go through the tools-scope proxy.
+  const sandbox = build.sandbox ? support() : undefined
+  if (sandbox && !sandbox.available)
+    warnings.push({
+      path: "sandbox",
+      message: "Command sandbox unavailable on this system; agent commands are limited by the network proxy only.",
+      ...(sandbox.reason && { detail: sandbox.reason }),
+    })
+  if (sandbox?.available)
     cfg.sandbox = {
       ...cfg.sandbox,
       enabled: true,
@@ -127,6 +182,8 @@ export function apply<T extends Shape>(cfg: T, warnings: Warning[], build: Baked
     cfg.mcp![name] = { ...item, enabled: false }
     warnings.push({ path: `mcp.${name}.url`, message: "MCP server disabled.", detail: problem })
   }
+
+  indexing(cfg, warnings, build)
 
   const allowed = (value: string) => !remote(value) || !validateEndpoint(value, "app", build)
   for (const value of cfg.instructions ?? [])
