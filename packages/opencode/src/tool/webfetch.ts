@@ -6,6 +6,7 @@ import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { isIconMimeType, isImageAttachment } from "@/util/media" // kilocode_change
 import { normalizeUrls } from "@/kilocode/util/url" // kilocode_change
+import { Hardening, permitUrlAsync } from "@kilocode/kilo-hardening" // kilocode_change
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
@@ -38,6 +39,9 @@ export const WebFetchTool = Tool.define(
           }
 
           const url = normalizeUrls(params.url) // kilocode_change
+          // kilocode_change start - restricted-egress build: model-chosen URLs get the tools scope
+          if (Hardening.off()) yield* Effect.promise(() => permitUrlAsync("tools", url, "webfetch"))
+          // kilocode_change end
 
           yield* ctx.ask({
             permission: "webfetch",

@@ -111,4 +111,23 @@ describe("hardening config layer", () => {
     expect(lance.cfg.indexing?.enabled).toBe(false)
     expect(lance.warnings[0].path).toBe("indexing.vectorStore")
   })
+
+  test("web search is denied until the build configures a provider, and asks once it does", () => {
+    const off = run({ permission: { websearch: "allow" }, agent: { code: { permission: { websearch: "allow" } } }, web_search: true })
+    expect(off.cfg.permission).toMatchObject({ websearch: "deny" })
+    expect(off.cfg.agent?.code?.permission).toMatchObject({ websearch: "deny" })
+    expect(off.cfg.web_search).toBe(false)
+
+    const on = parse({ ...structuredClone(baked), websearch: { providers: ["exa"], permission: "ask", audit: false } })
+    const warnings: { path: string; message: string }[] = []
+    const cfg = apply<Shape>({ permission: "allow" }, warnings, on, () => ({ available: false }))
+    expect(cfg.permission).toEqual({ "*": "allow", websearch: "ask" })
+    expect(cfg.web_search).toBe(true)
+  })
+
+  test("web fetch can be switched off by the build", () => {
+    const off = parse({ ...structuredClone(baked), webfetch: "off" })
+    const cfg = apply<Shape>({}, [], off, () => ({ available: false }))
+    expect(cfg.permission).toMatchObject({ webfetch: "deny" })
+  })
 })

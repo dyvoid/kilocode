@@ -9,6 +9,7 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Auth } from "@/auth" // kilocode_change - source Kilo bearer for Kilo-REST transport
 import { Env } from "@/env" // kilocode_change - config via Env.Service instead of process.env reads
+import { audit, Hardening, redact } from "@kilocode/kilo-hardening" // kilocode_change
 
 const MAX_RESULTS = 10 // kilocode_change - cap numResults across all transports
 
@@ -184,6 +185,7 @@ export const WebSearchTool = Tool.define(
               provider,
             },
           })
+          if (Hardening.off()) audit(provider, params.query) // kilocode_change - optional local search audit log
 
           // kilocode_change start - dispatch Kilo-REST transport
           const result = yield* transport === "kilo-rest"
@@ -206,7 +208,12 @@ export const WebSearchTool = Tool.define(
             title: `${title}: ${params.query}`,
             metadata: { provider, transport }, // kilocode_change - add transport
           }
-        }).pipe(Effect.orDie),
+        // kilocode_change start - restricted-egress build: never surface API keys carried in URLs
+        }).pipe(
+          Effect.mapError((err) => (Hardening.off() ? new Error(redact(String(err))) : err)),
+          Effect.orDie,
+        ),
+        // kilocode_change end
     }
   }),
 )

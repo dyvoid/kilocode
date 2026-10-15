@@ -10,3 +10,12 @@ group("external links", () => {
     expect(allowed("command:workbench.action.openSettings")).toBe(true)
   })
 })
+
+group("search helpers", () => {
+  test("redacts keys in URLs and error text", async () => {
+    const { redact } = await import("../src/search")
+    expect(redact("403 GET https://mcp.exa.ai/mcp?exaApiKey=sk-123&x=1")).toBe("403 GET https://mcp.exa.ai/mcp?exaApiKey=[redacted]&x=1")
+    expect(redact("https://h/x?api_key=abc")).toBe("https://h/x?api_key=[redacted]")
+    expect(redact("no key here")).toBe("no key here")
+  })
+})

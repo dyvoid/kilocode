@@ -36,6 +36,10 @@ export type Shape = {
   instructions?: string[]
   skills?: { paths?: readonly string[]; urls?: readonly string[] }
   experimental?: { image_generation?: boolean; [key: string]: unknown }
+  permission?: Permission
+  agent?: Record<string, { permission?: Permission; [key: string]: unknown } | undefined>
+  mode?: Record<string, { permission?: Permission; [key: string]: unknown } | undefined>
+  web_search?: boolean
   indexing?: {
     enabled?: boolean
     provider?: string
@@ -45,6 +49,26 @@ export type Shape = {
     qdrant?: { url?: string }
     [key: string]: unknown
   }
+}
+
+type Permission = string | Record<string, unknown>
+
+/**
+ * Web tool permissions from the build: search uses websearch.permission when a provider is configured
+ * (deny otherwise), fetch is denied when the build turns it off. Applied to the global and every
+ * per-agent permission block, because per-agent config is merged last.
+ */
+function tools(cfg: Shape, build: Baked) {
+  const search = build.websearch.providers.length > 0 ? build.websearch.permission : "deny"
+  const force = (value: Permission | undefined) => ({
+    ...(typeof value === "string" ? { "*": value } : value),
+    websearch: search,
+    ...(build.webfetch === "off" && { webfetch: "deny" }),
+  })
+  cfg.permission = force(cfg.permission)
+  for (const group of [cfg.agent, cfg.mode])
+    for (const item of Object.values(group ?? {})) if (item?.permission !== undefined) item.permission = force(item.permission)
+  cfg.web_search = build.websearch.providers.length > 0
 }
 
 /** Embedders that run against a host the build controls; every other one is a cloud service. */
@@ -187,6 +211,7 @@ export function apply<T extends Shape>(
   }
 
   indexing(cfg, warnings, build)
+  tools(cfg, build)
 
   const allowed = (value: string) => !remote(value) || !validateEndpoint(value, "app", build)
   for (const value of cfg.instructions ?? [])

@@ -5,6 +5,7 @@ export { EgressDeniedError, findEgressDenied, isEgressDenied } from "./error"
 export { denials, file as logFile, record, type Denial } from "./log"
 export { check, describe, entry, loopback, normalize, type Entry } from "./match"
 export { assertConsistent, permit, permitAsync, permitUrl, permitUrlAsync, validateEndpoint } from "./policy"
+export { audit, redact } from "./search"
 
 const key = Symbol.for("kilo.hardening.active")
 type Holder = { [key]?: boolean }
