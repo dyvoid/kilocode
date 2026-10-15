@@ -29,6 +29,7 @@ import { sandboxHandlers } from "./handlers/sandbox"
 import { sessionImportHandlers } from "./handlers/session-import"
 import { suggestionHandlers } from "./handlers/suggestion"
 import { telemetryHandlers } from "./handlers/telemetry"
+import { hardeningLayer } from "./hardening"
 
 export const provide = Layer.provide([
   agentBuilderHandlers,
@@ -61,6 +62,7 @@ export function provideListener(opts?: CorsOptions) {
     { global: true },
   )
   return Layer.provide([
+    hardeningLayer,
     errorLayer,
     compressionLayer,
     corsVaryFix,
