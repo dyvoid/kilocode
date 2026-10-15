@@ -103,16 +103,16 @@ function remote(value: string) {
 }
 
 /** Merges the build's default provider under any user edits, so users can add or rename models. */
-function provider(cfg: Shape, build: Baked) {
-  const user = cfg.provider?.[build.provider.id] ?? undefined
+function provider(cfg: Shape, build: NonNullable<Baked["provider"]>) {
+  const user = cfg.provider?.[build.id] ?? undefined
   const models = Object.fromEntries(
-    Object.entries(build.provider.models).map(([id, model]) => [id, { name: model.name, ...(model.limit && { limit: model.limit }) }]),
+    Object.entries(build.models).map(([id, model]) => [id, { name: model.name, ...(model.limit && { limit: model.limit }) }]),
   )
   return {
     ...user,
     npm: PROVIDER_NPM,
-    name: user?.name ?? build.provider.name,
-    options: { ...user?.options, baseURL: user?.options?.baseURL ?? build.provider.baseURL },
+    name: user?.name ?? build.name,
+    options: { ...user?.options, baseURL: user?.options?.baseURL ?? build.baseURL },
     models: { ...models, ...user?.models },
   } satisfies Provider
 }
@@ -128,18 +128,20 @@ export function apply<T extends Shape>(
   build: Baked = baked,
   support: () => { available: boolean; reason?: string } = () => backendSupport({ mode: "deny", allowedHosts: [] }),
 ): T {
-  // Providers: the build's generic provider plus any user-defined OpenAI-compatible provider whose
-  // base URL is on the allowlist. Everything else (built-in catalog providers, the Kilo gateway) is off.
-  const rest = Object.entries(cfg.provider ?? {}).filter(([id]) => id !== build.provider.id)
+  // Providers: the build's generic provider (when the build has one) plus any user-defined
+  // OpenAI-compatible provider whose base URL is on the allowlist. Everything else (built-in catalog
+  // providers, the Kilo gateway) is off.
+  const preset = build.provider
+  const rest = Object.entries(cfg.provider ?? {}).filter(([id]) => id !== preset?.id)
   const providers: Record<string, Provider | null> = {
-    [build.provider.id]: provider(cfg, build),
+    ...(preset && { [preset.id]: provider(cfg, preset) }),
     ...Object.fromEntries(rest),
   }
   const enabled: string[] = []
   for (const [id, item] of Object.entries(providers)) {
     if (!item) continue
     if (item.npm !== PROVIDER_NPM) {
-      if (id !== build.provider.id && cfg.provider?.[id])
+      if (id !== preset?.id && cfg.provider?.[id])
         warnings.push({
           path: `provider.${id}`,
           message: "Provider disabled: this build only supports OpenAI-compatible providers.",
@@ -161,8 +163,8 @@ export function apply<T extends Shape>(
     ...new Set([...(cfg.disabled_providers ?? []).filter((id) => !enabled.includes(id)), "kilo"]),
   ]
 
-  const first = Object.keys(build.provider.models)[0]
-  const fallback = enabled.includes(build.provider.id) && first ? `${build.provider.id}/${first}` : undefined
+  const first = preset && Object.keys(preset.models)[0]
+  const fallback = preset && first && enabled.includes(preset.id) ? `${preset.id}/${first}` : undefined
   const usable = (ref: string | null | undefined) => !!ref && enabled.includes(ref.split("/")[0])
   if (!usable(cfg.model)) cfg.model = fallback ?? null
   if (!usable(cfg.small_model)) cfg.small_model = cfg.model ?? null

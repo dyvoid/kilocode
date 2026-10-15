@@ -25,6 +25,21 @@ function variant(patch: Record<string, unknown>) {
 }
 
 group("config", () => {
+  test("an empty config is valid: defaults everywhere and no preconfigured provider", () => {
+    const cfg = parse({})
+    expect(cfg.provider).toBeUndefined()
+    expect(cfg.identity).toEqual({ publisher: "dyvoid", name: "code-agent", displayName: "Dyvoid Code Agent" })
+    expect(cfg.allow).toEqual({ app: [], tools: [] })
+    expect(cfg.websearch).toEqual({ providers: [], permission: "ask", audit: false })
+    expect([cfg.webfetch, cfg.sandbox]).toEqual(["tools", true])
+    expect(() => assertConsistent(cfg)).not.toThrow()
+  })
+
+  test("a provider needs only a base URL", () => {
+    const cfg = variant({ provider: { baseURL: "http://127.0.0.1:1234/v1", models: { qwen: {} } } })
+    expect(cfg.provider).toEqual({ id: "llm", name: "LLM", baseURL: "http://127.0.0.1:1234/v1", models: { qwen: { name: "qwen" } } })
+  })
+
   test("committed default config is valid and self-consistent", () => {
     expect(config.identity.name).toMatch(/^[a-z0-9-]+$/)
     expect(() => assertConsistent()).not.toThrow()
@@ -50,7 +65,7 @@ group("config", () => {
   })
 
   test("a provider outside the allowlist fails the consistency check", () => {
-    const cfg = variant({ provider: { ...raw.provider, baseURL: "https://api.openai.com/v1" } })
+    const cfg = variant({ provider: { baseURL: "https://api.openai.com/v1" } })
     expect(() => assertConsistent(cfg)).toThrow("provider.baseURL")
   })
 })

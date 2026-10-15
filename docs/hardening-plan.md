@@ -12,6 +12,7 @@ Inputs: `docs/egress-inventory.md` and the project brief. Nothing here is implem
 | Allowlist scopes | Two scopes: `app` (CLI and extension features: provider, indexing, web search) and `tools` (agent commands, web fetch, MCP) |
 | Network path to the LLM host | Direct, no corporate proxy |
 | Provider auth | None for now |
+| Preconfigured provider | None. The build config may name one, but every key is optional; by default users add their own OpenAI-compatible provider, whose base URL must be on loopback or `allow.app` |
 | Side-by-side install | Build-time rename of the `kilo-code.*` namespace; separate config/data directory |
 | Agent commands | Sandbox on by default on Linux/macOS; Windows gap accepted and documented |
 | Indexing | Allowed with local embedding/vector providers on loopback and LAN hosts in the allowlist |

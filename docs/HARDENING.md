@@ -1,17 +1,19 @@
 # Restricted-egress build
 
-This fork of Kilo Code ships a VS Code extension, and the CLI inside it, that connect only to hosts on an allowlist fixed at build time, use a single OpenAI-compatible provider, and have every Kilo cloud feature removed. End users install the VSIX and nothing else.
+This fork of Kilo Code ships a VS Code extension, and the CLI inside it, that connect only to hosts on an allowlist fixed at build time, use only OpenAI-compatible providers on that allowlist, and have every Kilo cloud feature removed. End users install the VSIX and nothing else.
 
 Upstream is the source of features. The fork is upstream tag `UPSTREAM` (see `packages/kilo-hardening/UPSTREAM`) plus a stack of `[hardened]` commits. Background: `docs/egress-inventory.md` (Phase 0 measurement) and `docs/hardening-plan.md` (decisions). Rollout: `docs/INSTALL.md`.
 
 ## Build configuration
 
-`packages/kilo-hardening/hardening.config.json` is imported as JSON, so esbuild and `bun build` inline it into the extension and the CLI. Nothing on a user's machine can change it: no setting, environment variable or file. CI replaces the committed file with the real one before building.
+`packages/kilo-hardening/hardening.config.json` is imported as JSON, so esbuild and `bun build` inline it into the extension and the CLI. Nothing on a user's machine can change it: no setting, environment variable or file. CI replaces the committed file with the `HARDENING_CONFIG` secret when it is set.
+
+Every key is optional. The committed file is `{}`: identity `dyvoid.code-agent`, no preconfigured provider, an allowlist of loopback only, features off, web search off, web fetch in the tools scope, sandbox on.
 
 | Key | Meaning |
 |---|---|
 | `identity.publisher`, `identity.name`, `identity.displayName` | Extension identity. `name` also replaces `kilo` as the config/data directory name and `kilo-code` as the command and settings namespace |
-| `provider.id`, `provider.name`, `provider.baseURL`, `provider.models` | The preconfigured OpenAI-compatible provider. Users can add models and edit it in the extension; the base URL must stay on the allowlist |
+| `provider.baseURL`, `provider.id`, `provider.name`, `provider.models` | Optional preconfigured OpenAI-compatible provider; only `baseURL` is required (`id` defaults to `llm`, `models` to none). Without it users add their own provider in the extension. Either way the base URL must be on loopback or `allow.app` |
 | `allow.app` | Hosts the CLI and the extension may reach: provider, indexing endpoints, internal links. Entries: `{ "host": "..." }`, `{ "suffix": "..." }`, `{ "cidr": "..." }`, each with optional `"ports": [...]` |
 | `allow.tools` | Hosts the model's tools may reach: agent commands (`bash`, `git`, `curl`), web fetch, MCP servers, the automated browser |
 | `features.autocomplete`, `features.speechToText`, `features.imageGeneration` | Hidden features that can be switched back on. They need a non-gateway backend first (see Gaps) |

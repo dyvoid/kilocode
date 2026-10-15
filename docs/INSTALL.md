@@ -1,10 +1,16 @@
 # Installing the restricted-egress extension (IT-managed rollout)
 
-Users install one VSIX and nothing else: no proxy settings, no firewall changes, no provider setup. The allowlist, the provider and the extension identity are fixed in the build (see `docs/HARDENING.md`).
+Users install one VSIX and nothing else: no proxy settings, no firewall changes. The allowlist and the extension identity are fixed in the build, and so is the provider if the build names one (see `docs/HARDENING.md`).
 
 ## 1. Get a build
 
-Run the `hardening-vsix` workflow (Actions → hardening-vsix → Run workflow, or push a `hardened-v*` tag). Before the first run, store the real build configuration as the repository secret `HARDENING_CONFIG`: the full contents of `packages/kilo-hardening/hardening.config.json` with your identity, provider and allowlist. Without the secret the build uses the committed config, which allows loopback only.
+Run the `hardening-vsix` workflow (Actions → hardening-vsix → Run workflow, or push a `hardened-v*` tag). Without configuration the build uses the committed `hardening.config.json` (`{}`): loopback only, no preconfigured provider, so users can reach an LLM on their own machine (Ollama, LM Studio, ...) and nothing else. To allow more, store a build config as the repository secret `HARDENING_CONFIG` (the whole JSON file). Every key is optional; to reach an LLM server on the network the minimum is:
+
+```json
+{ "allow": { "app": [{ "host": "llm.internal.example" }] } }
+```
+
+Add `"provider": { "baseURL": "https://llm.internal.example/v1" }` only if you want it preselected.
 
 The `vsix` artifact holds one VSIX per platform and `SHA256SUMS`:
 
@@ -51,7 +57,7 @@ The build's extension ID (`<publisher>.<name>` from the build config) is not pub
 
 ## 4. What users see
 
-- The provider from the build config is preselected; users can add models to it, or add other OpenAI-compatible providers whose base URL is on the allowlist. Anything else is rejected with a message listing the allowed hosts.
+- Users add an OpenAI-compatible provider in the extension's provider settings. Its base URL must be on loopback or the allowlist; anything else is rejected with a message listing the allowed hosts. If the build config names a provider, it is preselected and users can add models to it.
 - There is no marketplace, Kilo account, cloud history, credits, sharing or remote control.
 - Blocked network attempts are logged locally in `<data>/log/egress-denied.log`, where `<data>` is `$XDG_DATA_HOME/<name>` or `~/.local/share/<name>` (the same path on Windows and macOS, under the user's home).
 - On Linux (bubblewrap ships in the VSIX) and macOS, commands the agent runs are sandboxed. On Windows they are limited by the allowlist proxy only; tools that ignore proxy settings are not covered (see `docs/HARDENING.md`, Gaps).

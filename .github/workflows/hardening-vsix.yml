@@ -33,8 +33,9 @@ jobs:
       - name: Install vsce
         run: bun install -g @vscode/vsce
 
-      # The committed hardening.config.json allows loopback only. The real allowlist and provider come
-      # from the HARDENING_CONFIG repository secret (the whole JSON file).
+      # The committed hardening.config.json is empty: defaults everywhere, no preconfigured provider and
+      # an allowlist of loopback only. The optional HARDENING_CONFIG repository secret (the whole JSON
+      # file) replaces it.
       - name: Apply build configuration
         env:
           HARDENING_CONFIG: ${{ secrets.HARDENING_CONFIG }}
@@ -42,9 +43,9 @@ jobs:
           if [ -n "$HARDENING_CONFIG" ]; then
             printf '%s' "$HARDENING_CONFIG" > packages/kilo-hardening/hardening.config.json
           else
-            echo "::warning::HARDENING_CONFIG is not set; building with the committed loopback-only config"
+            echo "HARDENING_CONFIG is not set; building with the committed defaults (loopback only, no provider)"
           fi
-          bun -e 'const { config, assertConsistent } = await import("./packages/kilo-hardening/src/index.ts"); assertConsistent(config); console.log(`identity ${config.identity.publisher}.${config.identity.name}, provider ${config.provider.baseURL}`)'
+          bun -e 'const { config, assertConsistent } = await import("./packages/kilo-hardening/src/index.ts"); assertConsistent(config); console.log(`identity ${config.identity.publisher}.${config.identity.name}, provider ${config.provider?.baseURL ?? "none"}, app ${JSON.stringify(config.allow.app)}, tools ${JSON.stringify(config.allow.tools)}`)'
 
       - name: Setup Zig for Linux sandbox helpers
         run: |

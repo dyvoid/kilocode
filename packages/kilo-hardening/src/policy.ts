@@ -62,6 +62,7 @@ export async function permitUrlAsync(scope: Scope, input: string | URL, via: str
 
 /** Fails fast on a build whose default provider points outside its own allowlist. */
 export function assertConsistent(cfg: Config = config) {
+  if (!cfg.provider) return
   const problem = validateEndpoint(cfg.provider.baseURL, "app", cfg)
   if (problem && !problem.includes("resolves into")) throw new Error(`hardening.config.json: provider.baseURL: ${problem}`)
 }

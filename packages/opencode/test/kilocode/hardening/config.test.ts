@@ -130,4 +130,28 @@ describe("hardening config layer", () => {
     const cfg = apply<Shape>({}, [], off, () => ({ available: false }))
     expect(cfg.permission).toMatchObject({ webfetch: "deny" })
   })
+
+  test("a build without a preconfigured provider enables only the user's allowlisted providers", () => {
+    const bare = parse({ allow: { app: [{ host: "llm.corp.example" }] } })
+    const warnings: { path: string; message: string; detail?: string }[] = []
+    const empty = apply<Shape>({}, warnings, bare, () => ({ available: false }))
+    expect(empty.enabled_providers).toEqual([])
+    expect(empty.provider).toEqual({})
+    expect(empty.model).toBeNull()
+
+    const mine = apply<Shape>(
+      {
+        provider: {
+          lan: { npm: PROVIDER_NPM, options: { baseURL: "https://llm.corp.example/v1" }, models: { qwen: { name: "Qwen" } } },
+          local: { npm: PROVIDER_NPM, options: { baseURL: "http://127.0.0.1:1234/v1" } },
+        },
+        model: "lan/qwen",
+      },
+      [],
+      bare,
+      () => ({ available: false }),
+    )
+    expect(mine.enabled_providers).toEqual(["lan", "local"])
+    expect(mine.model).toBe("lan/qwen")
+  })
 })
