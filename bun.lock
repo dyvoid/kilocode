@@ -412,6 +412,7 @@
       "version": "7.8.12",
       "dependencies": {
         "@kilocode/kilo-gateway": "workspace:*",
+        "@kilocode/kilo-hardening": "workspace:*",
         "posthog-node": "4.4.0",
       },
       "devDependencies": {

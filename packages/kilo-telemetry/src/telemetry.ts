@@ -3,6 +3,7 @@ import { Client } from "./client.js"
 import { Conda } from "./conda.js"
 import { Identity } from "./identity.js"
 import { TelemetryEvent } from "./events.js"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 export interface TelemetryProperties {
   appName: string
@@ -100,6 +101,7 @@ export namespace Telemetry {
   }
 
   export function setEnabled(value: boolean) {
+    if (Hardening.active()) return Client.setEnabled(false)
     if (value === Client.isEnabled()) return
     Client.setEnabled(value)
     delete props.aauClientToken

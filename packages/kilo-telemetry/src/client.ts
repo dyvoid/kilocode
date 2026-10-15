@@ -4,6 +4,7 @@ import { TelemetryEvent } from "./events.js"
 import { createHash } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
+import { Hardening } from "@kilocode/kilo-hardening"
 
 const POSTHOG_API_KEY = "phc_GK2Pxl0HPj5ZPfwhLRjXrtdz8eD7e9MKnXiFrOqnB6z"
 const POSTHOG_HOST = "https://us.i.posthog.com"
@@ -17,6 +18,12 @@ export namespace Client {
   export function init(dir = "") {
     directory = dir
     pending.clear()
+    // Restricted-egress build: no PostHog client ever exists, so nothing can be queued or sent.
+    if (Hardening.active()) {
+      client = null
+      enabled = false
+      return
+    }
     client = new PostHog(POSTHOG_API_KEY, {
       host: POSTHOG_HOST,
       disableGeoip: false,
@@ -49,6 +56,11 @@ export namespace Client {
   }
 
   export function setEnabled(value: boolean) {
+    // Restricted-egress build: runtime calls (VS Code telemetry setting, /telemetry/setEnabled) cannot opt in.
+    if (Hardening.active()) {
+      enabled = false
+      return
+    }
     enabled = value
     if (!client) return
     if (value) client.optIn()

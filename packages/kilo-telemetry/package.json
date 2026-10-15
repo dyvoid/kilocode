@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "posthog-node": "4.4.0",
-    "@kilocode/kilo-gateway": "workspace:*"
+    "@kilocode/kilo-gateway": "workspace:*",
+    "@kilocode/kilo-hardening": "workspace:*"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
