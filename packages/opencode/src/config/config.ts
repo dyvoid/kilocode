@@ -49,6 +49,8 @@ import { sanitizeProjectMcpHeaders } from "../kilocode/config/mcp-headers"
 import { primaryPaths } from "../kilocode/primary-worktree"
 import { Git } from "@/git"
 import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
+import * as KiloHardeningConfig from "@/kilocode/hardening/config" // kilocode_change
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
 import { SandboxConfig } from "@/kilocode/sandbox/config"
 import { ExternalMarkdown } from "@/kilocode/config/external-markdown"
@@ -1055,6 +1057,7 @@ const layer = Layer.effect(
         }
         // kilocode_change start — inject Kilo default plugins into both plugin list and origins
         KilocodeDefaultPlugins.apply(result, { disabled: Flag.KILO_DISABLE_DEFAULT_PLUGINS, log })
+        if (Hardening.active()) KiloHardeningConfig.apply(result, warnings) // restricted-egress build policy
         // kilocode_change end
 
         return {
