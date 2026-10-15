@@ -9,6 +9,7 @@ import {
 } from "../src/services/cli-backend/cli-resources"
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { evidence as sbom } from "./sbom"
+import * as Identity from "../../kilo-hardening/script/identity"
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
@@ -63,6 +64,12 @@ console.log("\n📦 Compiling extension...")
 await $`bun run check-types`
 await $`bun run lint`
 await $`node ${join(import.meta.dir, "..", "esbuild.js")} --production`
+
+// Restricted-egress build: own publisher, name and command/setting namespace. Tracked manifest files are
+// restored when this script exits, so a local build leaves the checkout clean.
+const extensionDir = join(import.meta.dir, "..")
+Identity.apply(extensionDir)
+process.on("exit", () => Identity.restore(extensionDir))
 
 for (const config of targets) {
   console.log(`\n🎯 Processing target: ${config.target}`)

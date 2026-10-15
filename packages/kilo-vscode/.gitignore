@@ -4,3 +4,5 @@ out/
 storybook-static/
 test-results/
 playwright-report/
+# Restricted-egress build: manifest backups written by kilo-hardening/script/identity.ts
+*.upstream

@@ -8,6 +8,6 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["src/**/*", "test/**/*", "hardening.config.json"],
+  "include": ["src/**/*", "test/**/*", "script/**/*", "hardening.config.json"],
   "exclude": ["node_modules"]
 }

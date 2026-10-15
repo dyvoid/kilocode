@@ -32,3 +32,5 @@ bin/.cli-version
 
 # Include WAV assets used by extension-host notification playback
 !audio-wav/**
+# Restricted-egress build: manifest backups written by kilo-hardening/script/identity.ts
+*.upstream
