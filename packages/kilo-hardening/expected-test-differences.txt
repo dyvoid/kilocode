@@ -1,0 +1,5 @@
+# Upstream tests whose failure in the fork is an intended consequence of the restricted build.
+# One test id per line ("<suite> > <test>", as compare-junit.ts prints it), then "  # reason".
+# Keep this list short and specific: every entry is a behaviour the fork changes on purpose.
+opencode mcp add (non-interactive subprocess) > adds a remote server with HTTP headers  # hardened CLI keeps config under ~/.config/<identity.name>, not ~/.config/kilo (decision 2b)
+opencode mcp add (non-interactive subprocess) > adds a local server while preserving argv and environment values  # same: config directory is the build's own

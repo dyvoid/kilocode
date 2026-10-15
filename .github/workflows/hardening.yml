@@ -86,3 +86,95 @@ jobs:
             cd packages/kilo-hardening
             bun script/egress-test.ts
           '
+
+  # Acceptance: existing upstream test suites pass. The same suites run on this branch and on the exact
+  # upstream base tag, on the same runner image; only tests that pass upstream and fail here count.
+  base:
+    name: Upstream base tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: packages/kilo-hardening/UPSTREAM
+          sparse-checkout-cone-mode: false
+      - id: tag
+        run: echo "tag=$(cat packages/kilo-hardening/UPSTREAM)" >> "$GITHUB_OUTPUT"
+
+  suites:
+    name: Upstream suites (${{ matrix.side }} ${{ matrix.shard }}/4)
+    needs: base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [fork, upstream]
+        shard: [1, 2, 3, 4]
+    env:
+      TURBO_FORCE: "true"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.side == 'upstream' && 'Kilo-Org/kilocode' || github.repository }}
+          ref: ${{ matrix.side == 'upstream' && needs.base.outputs.tag || github.sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: ./.github/actions/setup-linux-sandbox
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@users.noreply.github.com"
+          git config --global user.name "ci"
+
+      # --continue: without it turbo stops scheduling packages after the first failure, so the two
+      # sides would run different test sets.
+      - name: Non-CLI unit tests
+        if: matrix.shard == 1
+        continue-on-error: true
+        run: bun turbo test:ci --continue --output-logs=errors-only --filter='!@kilocode/cli' --filter='!@kilocode/kilo-jetbrains'
+        env:
+          KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+
+      - name: CLI unit tests
+        continue-on-error: true
+        run: bun turbo test:ci --continue --output-logs=errors-only --filter='@kilocode/cli'
+        env:
+          KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+          KILO_TEST_SHARD: ${{ matrix.shard }}/4
+          KILO_TEST_FILE_TIMEOUT: "600000"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: junit-${{ matrix.side }}-${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            .artifacts/unit/*.xml
+            packages/*/.artifacts/unit/*.xml
+
+  compare:
+    name: No regressions against upstream
+    needs: suites
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: junit-fork-*
+          path: reports/fork
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: junit-upstream-*
+          path: reports/upstream
+      - run: bun packages/kilo-hardening/script/compare-junit.ts reports/fork reports/upstream
