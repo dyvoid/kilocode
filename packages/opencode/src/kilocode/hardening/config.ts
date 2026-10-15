@@ -1,4 +1,5 @@
-import { config as baked, entries, validateEndpoint, type Config as Baked } from "@kilocode/kilo-hardening"
+import { isIP } from "node:net"
+import { config as baked, entries, validateEndpoint, type Config as Baked, type Entry } from "@kilocode/kilo-hardening"
 import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
 import { isIndexingPlugin } from "@kilocode/kilo-indexing/detect"
@@ -26,6 +27,9 @@ export type Shape = {
   disabled_providers?: string[]
   model?: string | null
   small_model?: string | null
+  subagent_model?: string | null
+  memory_model?: string | null
+  command?: Record<string, { model?: string; [key: string]: unknown } | undefined>
   plugin?: ConfigPluginV1.Spec[]
   plugin_origins?: ConfigPlugin.Origin[]
   share?: "manual" | "auto" | "disabled"
@@ -60,11 +64,13 @@ type Permission = string | Record<string, unknown>
  */
 function tools(cfg: Shape, build: Baked) {
   const search = build.websearch.providers.length > 0 ? build.websearch.permission : "deny"
-  const force = (value: Permission | undefined) => ({
-    ...(typeof value === "string" ? { "*": value } : value),
-    websearch: search,
-    ...(build.webfetch === "off" && { webfetch: "deny" }),
-  })
+  // Rules are evaluated last-match-wins in key order, so the forced keys are removed and appended last.
+  const force = (value: Permission | undefined) => {
+    const base: Record<string, unknown> = { ...(typeof value === "string" ? { "*": value } : value) }
+    delete base.websearch
+    if (build.webfetch === "off") delete base.webfetch
+    return { ...base, websearch: search, ...(build.webfetch === "off" && { webfetch: "deny" }) }
+  }
   cfg.permission = force(cfg.permission)
   for (const group of [cfg.agent, cfg.mode])
     for (const item of Object.values(group ?? {})) if (item?.permission !== undefined) item.permission = force(item.permission)
@@ -74,15 +80,17 @@ function tools(cfg: Shape, build: Baked) {
 /** Embedders that run against a host the build controls; every other one is a cloud service. */
 const EMBEDDERS = new Set(["ollama", "openai-compatible"])
 
-function indexing(cfg: Shape, warnings: Warning[], build: Baked) {
-  const item = cfg.indexing
-  if (!item?.enabled) return
-  const off = (path: string, message: string, detail?: string) => {
-    cfg.indexing = { ...item, enabled: false }
-    warnings.push({ path, message, ...(detail && { detail }) })
-  }
+/**
+ * Why the restricted build cannot run this indexing config, or undefined when it can. Checked by the
+ * config layer and again where indexing starts, because the VS Code extension enables indexing by
+ * consent rather than through `indexing.enabled`.
+ */
+export function indexingProblem(item: NonNullable<Shape["indexing"]>, build: Baked = baked): Warning | undefined {
   if (!item.provider || !EMBEDDERS.has(item.provider))
-    return off("indexing.provider", "Indexing disabled: use the ollama or openai-compatible embedder with a host on the allowlist.")
+    return {
+      path: "indexing.provider",
+      message: "Indexing disabled: use the ollama or openai-compatible embedder with a host on the allowlist.",
+    }
   const endpoints = [
     ["indexing.ollama.baseUrl", item.provider === "ollama" ? (item.ollama?.baseUrl ?? "http://localhost:11434") : undefined],
     ["indexing.openai-compatible.baseUrl", item.provider === "openai-compatible" ? item["openai-compatible"]?.baseUrl : undefined],
@@ -91,11 +99,24 @@ function indexing(cfg: Shape, warnings: Warning[], build: Baked) {
   for (const [path, url] of endpoints) {
     if (!url) continue
     const problem = validateEndpoint(url, "app", build)
-    if (problem) return off(path, "Indexing disabled.", problem)
+    if (problem) return { path, message: "Indexing disabled.", detail: problem }
   }
   // LanceDB is installed from the npm registry on first use unless the build ships it (KILO_LANCEDB_PATH).
   if ((item.vectorStore ?? "lancedb") === "lancedb" && !process.env.KILO_LANCEDB_PATH)
-    return off("indexing.vectorStore", 'Indexing disabled: LanceDB is not bundled with this build. Set "indexing.vectorStore" to "qdrant".')
+    return {
+      path: "indexing.vectorStore",
+      message: 'Indexing disabled: LanceDB is not bundled with this build. Set "indexing.vectorStore" to "qdrant".',
+    }
+}
+
+function indexing(cfg: Shape, warnings: Warning[], build: Baked) {
+  const item = cfg.indexing
+  if (!item) return
+  const problem = indexingProblem(item, build)
+  if (!problem) return
+  cfg.indexing = { ...item, enabled: false }
+  // Only worth a warning when the user turned indexing on; VS Code consent hits the check at start-up.
+  if (item.enabled) warnings.push(problem)
 }
 
 function remote(value: string) {
@@ -126,7 +147,8 @@ export function apply<T extends Shape>(
   cfg: T,
   warnings: Warning[],
   build: Baked = baked,
-  support: () => { available: boolean; reason?: string } = () => backendSupport({ mode: "deny", allowedHosts: [] }),
+  support: (hosts: string[]) => { available: boolean; reason?: string } = (hosts) =>
+    backendSupport({ mode: hosts.length > 0 ? "proxy" : "deny", allowedHosts: hosts }),
 ): T {
   // Providers: the build's generic provider (when the build has one) plus any user-defined
   // OpenAI-compatible provider whose base URL is on the allowlist. Everything else (built-in catalog
@@ -138,9 +160,15 @@ export function apply<T extends Shape>(
     ...Object.fromEntries(rest),
   }
   const enabled: string[] = []
+  // A provider the user (or their org) disabled stays disabled.
+  const disabled = new Set(cfg.disabled_providers ?? [])
   for (const [id, item] of Object.entries(providers)) {
-    if (!item) continue
-    if (item.npm !== PROVIDER_NPM) {
+    if (!item || disabled.has(id)) continue
+    if (id === "kilo") {
+      warnings.push({ path: "provider.kilo", message: 'Provider disabled: the id "kilo" is reserved for the Kilo gateway.' })
+      continue
+    }
+    if (item.npm !== undefined && item.npm !== PROVIDER_NPM) {
       if (id !== preset?.id && cfg.provider?.[id])
         warnings.push({
           path: `provider.${id}`,
@@ -154,20 +182,58 @@ export function apply<T extends Shape>(
       warnings.push({ path: `provider.${id}.options.baseURL`, message: "Provider disabled.", detail: problem })
       continue
     }
+    // Without `npm` upstream would take the catalog's SDK for a known id (openai, anthropic, ...): pin it.
+    // Per-model SDK overrides are dropped for the same reason.
+    const models = Object.fromEntries(
+      Object.entries(item.models ?? {}).map(([name, model]) => {
+        const sdk = (model as { provider?: { npm?: string } } | undefined)?.provider?.npm
+        if (sdk === undefined || sdk === PROVIDER_NPM) return [name, model]
+        warnings.push({ path: `provider.${id}.models.${name}.provider.npm`, message: "Model SDK override removed: this build only supports OpenAI-compatible providers." })
+        const rest = { ...(model as Record<string, unknown>) }
+        delete rest.provider
+        return [name, rest]
+      }),
+    )
+    providers[id] = { ...item, npm: PROVIDER_NPM, ...(item.models && { models }) } as Provider
     enabled.push(id)
   }
   cfg.provider = providers
   cfg.enabled_providers = enabled
   // "kilo" listed explicitly: the extension shows the Kilo Gateway card unless it is disabled.
-  cfg.disabled_providers = [
-    ...new Set([...(cfg.disabled_providers ?? []).filter((id) => !enabled.includes(id)), "kilo"]),
-  ]
+  cfg.disabled_providers = [...new Set([...disabled, "kilo"])]
 
+  // Models: every reference must name an enabled provider, or it is dropped (with a warning when the
+  // user set it) so the default applies instead of a "model not found" at run time.
   const first = preset && Object.keys(preset.models)[0]
   const fallback = preset && first && enabled.includes(preset.id) ? `${preset.id}/${first}` : undefined
   const usable = (ref: string | null | undefined) => !!ref && enabled.includes(ref.split("/")[0])
-  if (!usable(cfg.model)) cfg.model = fallback ?? null
-  if (!usable(cfg.small_model)) cfg.small_model = cfg.model ?? null
+  const dropped = (path: string, ref: string | null | undefined) => {
+    if (ref) warnings.push({ path, message: `Model ${ref} is not available in this build; using the default.` })
+  }
+  if (!usable(cfg.model)) {
+    dropped("model", cfg.model)
+    cfg.model = fallback ?? null
+  }
+  if (!usable(cfg.small_model)) {
+    dropped("small_model", cfg.small_model)
+    cfg.small_model = cfg.model ?? null
+  }
+  for (const key of ["subagent_model", "memory_model"] as const)
+    if (cfg[key] && !usable(cfg[key])) {
+      dropped(key, cfg[key])
+      delete cfg[key]
+    }
+  for (const [group, items] of [
+    ["agent", cfg.agent],
+    ["mode", cfg.mode],
+    ["command", cfg.command],
+  ] as const)
+    for (const [name, item] of Object.entries(items ?? {})) {
+      const ref = item?.model
+      if (!item || typeof ref !== "string" || usable(ref)) continue
+      dropped(`${group}.${name}.model`, ref)
+      delete item.model
+    }
 
   // Plugins: only the built-in indexing plugin and local file plugins. npm plugins need the registry.
   const keep = (spec: ConfigPluginV1.Spec) =>
@@ -188,20 +254,20 @@ export function apply<T extends Shape>(
 
   // Agent commands run sandboxed (Linux/macOS) with network limited to the tools scope. Where no backend
   // is available (Windows, or Linux without bubblewrap) commands still go through the tools-scope proxy.
-  const sandbox = build.sandbox ? support() : undefined
+  // The sandbox's own proxy takes exact "name:port" destinations on public addresses only: IP, range and
+  // suffix entries cannot be expressed, so sandboxed commands cannot reach them.
+  const list = entries(build, "tools")
+  const named = list.filter((item): item is Extract<Entry, { kind: "host" }> => item.kind === "host" && !isIP(item.host))
+  const hosts = named.flatMap((item) => (item.ports ?? [443, 80]).map((port) => `${item.host}:${port}`))
+  const sandbox = build.sandbox ? support(hosts) : undefined
   if (sandbox && !sandbox.available)
     warnings.push({
       path: "sandbox",
       message: "Command sandbox unavailable on this system; agent commands are limited by the network proxy only.",
       ...(sandbox.reason && { detail: sandbox.reason }),
     })
-  if (sandbox?.available)
-    cfg.sandbox = {
-      ...cfg.sandbox,
-      enabled: true,
-      network: "deny",
-      allowed_hosts: entries(build, "tools").flatMap((item) => (item.kind === "host" ? [item.host] : [])),
-    }
+  // Entries the sandbox cannot express are reported when the VSIX is built (see sandboxNotes), not on every start.
+  if (sandbox?.available) cfg.sandbox = { ...cfg.sandbox, enabled: true, network: "deny", allowed_hosts: hosts }
 
   // Remote MCP servers run in-process; they get the tools scope (local ones inherit the tools proxy).
   for (const [name, item] of Object.entries(cfg.mcp ?? {})) {

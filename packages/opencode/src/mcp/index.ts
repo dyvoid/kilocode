@@ -8,6 +8,7 @@ if (process.platform === "win32" && !("type" in process)) {
 // kilocode_change end
 
 import path from "node:path"
+import { Hardening, validateEndpoint } from "@kilocode/kilo-hardening" // kilocode_change
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
@@ -477,6 +478,10 @@ const layer = Layer.effect(
         if (mcp.enabled === false) {
           return DISABLED_RESULT
         }
+        // kilocode_change start - restricted-egress build: every remote server, however it was added, needs a tools-scope URL
+        const refused = mcp.type === "remote" && Hardening.off() ? validateEndpoint(mcp.url, "tools") : undefined
+        if (refused) return { status: { status: "failed" as const, error: refused } } satisfies CreateResult
+        // kilocode_change end
 
         const { client: mcpClient, status } =
           mcp.type === "remote"
@@ -918,6 +923,10 @@ const layer = Layer.effect(
       if (!mcpConfig || !isMcpConfigured(mcpConfig)) return undefined
       return mcpConfig
     })
+    // kilocode_change start - restricted-egress build: auth flows use stored or added configs directly
+    const refusedMcp = (mcpConfig: ConfigMCPV1.Info & { type: "remote" }) =>
+      Hardening.off() ? validateEndpoint(mcpConfig.url, "tools") : undefined
+    // kilocode_change end
 
     const requireMcpConfig = Effect.fnUntraced(function* (mcpName: string) {
       const mcpConfig = yield* getMcpConfig(mcpName)
@@ -930,6 +939,8 @@ const layer = Layer.effect(
       // kilocode_change end
       const mcpConfig = yield* requireMcpConfig(mcpName)
       if (mcpConfig.type !== "remote") throw new Error(`MCP server ${mcpName} is not a remote server`)
+      const refused = refusedMcp(mcpConfig) // kilocode_change
+      if (refused) throw new Error(refused) // kilocode_change
       if (mcpConfig.oauth === false) throw new Error(`MCP server ${mcpName} has OAuth explicitly disabled`)
       const url = remoteURL(mcpConfig.url)
       if (!url) throw new Error(`Invalid MCP URL for "${mcpName}"`)
@@ -1033,6 +1044,8 @@ const layer = Layer.effect(
       if (!mcpConfig) return { status: "failed", error: "MCP config not found after auth" } as Status
       if (mcpConfig.type !== "remote")
         return { status: "failed", error: `MCP server ${mcpName} is not a remote server` } as Status
+      const refused = refusedMcp(mcpConfig)
+      if (refused) return { status: "failed", error: refused } as Status
       const oauthConfig = typeof mcpConfig.oauth === "object" ? mcpConfig.oauth : undefined
       const effectiveRedirectUri =
         oauthConfig?.redirectUri ??

@@ -127,6 +127,7 @@ import {
   provide as provideKiloHttpApiHandlers,
   provideListener as provideKiloListenerRoutes,
 } from "@/kilocode/server/httpapi/server"
+import { hardeningLayer } from "@/kilocode/server/httpapi/hardening" // kilocode_change
 // kilocode_change end
 import { instanceContextLayer } from "./middleware/instance-context"
 import { workspaceRoutingLayer } from "./middleware/workspace-routing"
@@ -313,6 +314,7 @@ export function createRoutes(
     uiRoute,
   ).pipe(
     Layer.provide([
+      hardeningLayer, // kilocode_change
       errorLayer,
       compressionLayer,
       corsVaryFix,

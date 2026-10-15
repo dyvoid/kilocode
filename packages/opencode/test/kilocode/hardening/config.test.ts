@@ -9,7 +9,7 @@ const build = parse({
   sandbox: true,
 })
 
-function run(cfg: Shape, available = true) {
+function run(cfg: Shape, available = true): { cfg: Shape; warnings: { path: string; message: string; detail?: string }[] } {
   const warnings: { path: string; message: string; detail?: string }[] = []
   return { cfg: apply(cfg, warnings, build, () => ({ available, reason: "no bubblewrap" })), warnings }
 }
@@ -47,8 +47,56 @@ describe("hardening config layer", () => {
     })
     expect(cfg.enabled_providers).toEqual(["llm", "local"])
     expect(cfg.model).toBe("llm/big")
-    expect(warnings.map((item) => item.path)).toEqual(["provider.openai", "provider.rogue.options.baseURL"])
+    expect(warnings.map((item) => item.path)).toEqual(["provider.openai", "provider.rogue.options.baseURL", "model"])
     expect(warnings[1].detail).toContain("not on this build's allowlist")
+  })
+
+  test("a provider the user disabled stays disabled; one without npm counts as OpenAI-compatible", () => {
+    const { cfg } = run({
+      provider: {
+        local: { npm: PROVIDER_NPM, options: { baseURL: "http://127.0.0.1:1234/v1" } },
+        bare: { options: { baseURL: "http://127.0.0.1:5678/v1" } },
+      },
+      disabled_providers: ["local"],
+    })
+    expect(cfg.enabled_providers).toEqual(["llm", "bare"])
+    expect(cfg.disabled_providers).toEqual(["local", "kilo"])
+  })
+
+  test("a catalog provider id without npm is pinned to the OpenAI-compatible SDK, and model SDK overrides go", () => {
+    const { cfg, warnings } = run({
+      provider: {
+        openai: {
+          options: { baseURL: "http://127.0.0.1:1234/v1" },
+          models: { a: { name: "A", provider: { npm: "@ai-sdk/anthropic" } }, b: { name: "B" } },
+        },
+      },
+    })
+    expect(cfg.enabled_providers).toEqual(["llm", "openai"])
+    expect(cfg.provider?.openai?.npm).toBe(PROVIDER_NPM)
+    expect(cfg.provider?.openai?.models).toEqual({ a: { name: "A" }, b: { name: "B" } })
+    expect(warnings.map((item) => item.path)).toEqual(["provider.openai.models.a.provider.npm"])
+  })
+
+  test("a user provider named kilo is not enabled", () => {
+    const { cfg, warnings } = run({ provider: { kilo: { npm: PROVIDER_NPM, options: { baseURL: "http://127.0.0.1:1/v1" } } } })
+    expect(cfg.enabled_providers).toEqual(["llm"])
+    expect(warnings.map((item) => item.path)).toEqual(["provider.kilo"])
+  })
+
+  test("model references to providers the build disables are dropped everywhere", () => {
+    const { cfg, warnings } = run({
+      subagent_model: "openai/x",
+      memory_model: "llm/big",
+      agent: { build: { model: "anthropic/y" }, plan: { model: "llm/big" } },
+      command: { review: { model: "openai/z", template: "t" } },
+    })
+    expect(cfg.subagent_model).toBeUndefined()
+    expect(cfg.memory_model).toBe("llm/big")
+    expect(cfg.agent?.build).not.toHaveProperty("model")
+    expect(cfg.agent?.plan?.model).toBe("llm/big")
+    expect(cfg.command?.review).toEqual({ template: "t" })
+    expect(warnings.map((item) => item.path)).toEqual(["subagent_model", "agent.build.model", "command.review.model"])
   })
 
   test("a user base URL outside the allowlist disables even the build's provider", () => {
@@ -81,7 +129,11 @@ describe("hardening config layer", () => {
     const { cfg } = run({ share: "auto", autoupdate: true })
     expect(cfg.share).toBe("disabled")
     expect(cfg.autoupdate).toBe(false)
-    expect(cfg.sandbox).toEqual({ enabled: true, network: "deny", allowed_hosts: ["llm.corp.example", "git.corp.example"] })
+    expect(cfg.sandbox).toEqual({
+      enabled: true,
+      network: "deny",
+      allowed_hosts: ["llm.corp.example:443", "llm.corp.example:80", "git.corp.example:443", "git.corp.example:80"],
+    })
   })
 
   test("no sandbox backend leaves commands unsandboxed with a warning instead of failing every command", () => {
@@ -114,6 +166,9 @@ describe("hardening config layer", () => {
 
   test("web search is denied until the build configures a provider, and asks once it does", () => {
     const off = run({ permission: { websearch: "allow" }, agent: { code: { permission: { websearch: "allow" } } }, web_search: true })
+    // Rules are last-match-wins in key order: a later wildcard must not override the forced keys.
+    const ordered = run({ permission: { websearch: "allow", "*": "allow" } })
+    expect(Object.entries(ordered.cfg.permission as object).at(-1)).toEqual(["websearch", "deny"])
     expect(off.cfg.permission).toMatchObject({ websearch: "deny" })
     expect(off.cfg.agent?.code?.permission).toMatchObject({ websearch: "deny" })
     expect(off.cfg.web_search).toBe(false)

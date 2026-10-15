@@ -7,7 +7,7 @@ import { toIndexingConfigInput, type IndexingConfig } from "@kilocode/kilo-index
 import { hasIndexingPlugin } from "@kilocode/kilo-indexing/detect"
 import { IndexingStatus, disabledIndexingStatus } from "@kilocode/kilo-indexing/status"
 import { Telemetry } from "@kilocode/kilo-telemetry"
-import { fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
+import { EMPTY_KILO_EMBEDDING_MODEL_CATALOG, fetchKiloEmbeddingModelCatalog } from "@kilocode/kilo-gateway"
 import { allowed, message } from "@opencode-ai/core/kilocode/fff"
 import { Instance } from "@/kilocode/instance"
 import { Bus } from "@/bus"
@@ -27,6 +27,8 @@ import { IndexingWorker } from "./indexing-worker-client"
 import { LanceDBRuntime } from "./lancedb"
 import { indexingWithKiloDefault, resolveKiloIndexingAuth, type KiloIndexingAuth } from "./indexing-auth"
 import { primaryWorktree } from "./primary-worktree"
+import { Hardening } from "@kilocode/kilo-hardening"
+import { indexingProblem } from "./hardening/config"
 
 const log = Log.create({ service: "kilocode-indexing" })
 const auth = makeRuntime(Auth.Service, Auth.defaultLayer)
@@ -300,6 +302,9 @@ export namespace KiloIndexing {
     const globalConfig = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
     const global = globalConfig.indexing
     const merged = indexingWithKiloDefault({ ...global, ...cfg.indexing }, auth) ?? {}
+    // Restricted-egress build: only local or allowlisted embedders and vector stores, whatever enabled indexing.
+    const blocked = Hardening.off() ? indexingProblem(merged) : undefined
+    if (blocked) return track(hit, await inert(() => disabledIndexingStatus(`${blocked.message} ${blocked.detail ?? ""}`.trim())))
     let cfgInput: Awaited<ReturnType<typeof model>>
     try {
       cfgInput = await model(
@@ -548,6 +553,8 @@ export namespace KiloIndexing {
   }
 
   export async function models() {
+    // Restricted-egress build: the catalog lives on the Kilo gateway and only lists gateway embedders.
+    if (Hardening.off()) return EMPTY_KILO_EMBEDDING_MODEL_CATALOG
     try {
       const cfg = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
       const auth = await kiloAuth(cfg)
