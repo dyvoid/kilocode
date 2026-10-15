@@ -7,6 +7,7 @@ const core = require("@babel/core")
 const solid = require("babel-preset-solid")
 const ts = require("@babel/preset-typescript")
 const playwright = require("./script/playwright-runtime")
+const hardening = require("@kilocode/kilo-hardening/esbuild")
 
 const production = process.argv.includes("--production")
 const watch = process.argv.includes("--watch")
@@ -427,7 +428,9 @@ function getExtensionConfig() {
     outfile: "dist/extension.js",
     external: ["vscode"],
     logLevel: "silent",
-    plugins: [playwright, ...(watch ? [esbuildProblemMatcherPlugin] : [])],
+    // Restricted-egress build: our own net/tls/http(s)/fetch/WebSocket uses go through the allowlist guard.
+    inject: hardening.inject,
+    plugins: [hardening.plugin, playwright, ...(watch ? [esbuildProblemMatcherPlugin] : [])],
   }
 }
 

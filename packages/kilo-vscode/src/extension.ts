@@ -1,3 +1,4 @@
+import "@kilocode/kilo-hardening/activate" // restricted-egress build; must stay the first import
 import * as vscode from "vscode"
 import { basename } from "node:path"
 import { realpathSync } from "node:fs"

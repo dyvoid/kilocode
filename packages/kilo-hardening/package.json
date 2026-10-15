@@ -9,7 +9,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./install": "./src/install.ts",
-    "./node": "./src/node/index.ts"
+    "./activate": "./src/node/activate.ts",
+    "./node": "./src/node/index.ts",
+    "./esbuild": "./esbuild.cjs"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
