@@ -1,6 +1,6 @@
 # Egress inventory (Phase 0)
 
-Baseline: upstream tag `v7.8.12` (`8001cdc`). The working branch is `v7.8.12` plus upstream PR #14774 (Agent Manager terminal ownership, 5 files, no network code). No hardening changes exist yet.
+Baseline: upstream tag `v7.8.12` (`8001cdc`). The capture ran on `v7.8.12` plus upstream PR #14774 (Agent Manager terminal ownership, 5 files, no network code); the branch has since been reset to the exact tag. No hardening changes exist yet.
 
 ## Method
 
