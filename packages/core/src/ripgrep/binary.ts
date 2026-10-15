@@ -9,6 +9,7 @@ import { httpClient } from "../effect/app-node-platform"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { which } from "../util/which"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
 
 export namespace RipgrepBinary {
   const VERSION = "15.1.0"
@@ -102,6 +103,10 @@ export namespace RipgrepBinary {
             const config = PLATFORM[platformKey]
             if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
 
+            // kilocode_change start - restricted-egress build ships rg instead of downloading it
+            if (Hardening.off())
+              throw new Error("ripgrep (rg) was not found on PATH or in the bin directory, and downloads are disabled in this build")
+            // kilocode_change end
             const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
             const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
             const archive = path.join(Global.Path.bin, filename)

@@ -12,6 +12,7 @@ import { filesystem } from "./effect/app-node-platform"
 import { LayerNode } from "./effect/layer-node"
 import { makeRuntime } from "./effect/runtime"
 import { NpmConfig } from "./npm-config"
+import { Hardening } from "@kilocode/kilo-hardening" // kilocode_change
 
 export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
   add: Schema.Array(Schema.String).pipe(Schema.optional),
@@ -79,6 +80,14 @@ const layer = Layer.effect(
     const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
     const reify = (input: { dir: string; add?: string[] }) =>
       Effect.gen(function* () {
+        // kilocode_change start - restricted-egress build: no package registry access
+        if (Hardening.off())
+          return yield* new InstallFailedError({
+            add: input.add ?? [],
+            dir: input.dir,
+            cause: new Error("Package installs are disabled in this build"),
+          })
+        // kilocode_change end
         yield* flock.acquire(`npm-install:${input.dir}`)
         const { Arborist } = yield* Effect.promise(() => import("@npmcli/arborist"))
         const add = input.add ?? []
