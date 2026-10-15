@@ -4,7 +4,7 @@ Users install one VSIX and nothing else: no proxy settings, no firewall changes.
 
 ## 1. Get a build
 
-Run the `hardening-vsix` workflow (Actions → hardening-vsix → Run workflow, or push a `hardened-v*` tag). Without configuration the build uses the committed `hardening.config.json` (`{}`): loopback only, no preconfigured provider, so users can reach an LLM on their own machine (Ollama, LM Studio, ...) and nothing else. To allow more, store a build config as the repository secret `HARDENING_CONFIG` (the whole JSON file). Every key is optional; to reach an LLM server on the network the minimum is:
+Run the `hardening-vsix` workflow: Actions → hardening-vsix → Run workflow with a version, or push a tag `hardened-vX.Y.Z`. Each build needs a version higher than the one installed, or VS Code keeps the installed copy. Without configuration the build uses the committed `hardening.config.json` (`{}`): loopback only, no preconfigured provider, so users can reach an LLM on their own machine (Ollama, LM Studio, ...) and nothing else. To allow more, store a build config as the repository secret `HARDENING_CONFIG` (the whole JSON file). Every key is optional; to reach an LLM server on the network the minimum is:
 
 ```json
 { "allow": { "app": [{ "host": "llm.internal.example" }] } }
@@ -44,7 +44,7 @@ Per machine, as the user who runs VS Code:
 code --install-extension /path/to/kilo-vscode-<platform>.vsix
 ```
 
-Updates install the same way: a VSIX with a higher version replaces the installed one. For fleet rollout, run that command from your software-distribution tool (Intune, SCCM, Jamf, Ansible, ...) in the user's context after VS Code is installed.
+Updates install the same way: a VSIX with a higher version replaces the installed one (`--force` reinstalls the same version). For fleet rollout, run that command from your software-distribution tool (Intune, SCCM, Jamf, Ansible, ...) in the user's context after VS Code is installed.
 
 The extension installs beside upstream Kilo Code if a user also has it. They share no settings, commands, credentials or session data: the build uses its own extension ID, setting namespace and data directory.
 
@@ -66,7 +66,7 @@ The build's extension ID (`<publisher>.<name>` from the build config) is not pub
 
 | Symptom | Check |
 |---|---|
-| "Network access to X is blocked" | X is not on the allowlist. Changing it means a new build: update `HARDENING_CONFIG` and rerun the workflow |
+| "Network access to X is blocked" | X is not on the allowlist. Changing it means a new build: update `HARDENING_CONFIG` and rerun the workflow with a higher version |
 | Provider unreachable | The provider host is reachable from the machine and its TLS certificate chains to a CA in the OS trust store (the CLI uses the system store) |
 | Search in the codebase fails with "ripgrep (rg) was not found" | Only on `alpine-arm64`: install `ripgrep` from the distribution |
 | Indexing does not start | Indexing needs the `ollama` or `openai-compatible` embedder and a Qdrant vector store on allowlisted hosts; the CLI reports a config warning naming the field it rejected |

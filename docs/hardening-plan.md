@@ -1,6 +1,6 @@
-# Hardening plan (Phase 1, awaiting owner approval to start Phase 2)
+# Hardening plan (Phase 1 design record)
 
-Inputs: `docs/egress-inventory.md` and the project brief. Nothing here is implemented yet.
+Inputs: `docs/egress-inventory.md` and the project brief. Approved and implemented; kept as the record of the decisions. Where it differs from the code, `docs/HARDENING.md` describes the current build.
 
 ## Owner decisions
 
@@ -22,7 +22,7 @@ Inputs: `docs/egress-inventory.md` and the project brief. Nothing here is implem
 
 ## Allowlist
 
-Source: `hardening.config.json`, compiled into the extension and the CLI as a constant at build time. The repo ships `hardening.config.example.json`; CI supplies the real file. Nothing on the user's machine can change it.
+Source: `hardening.config.json`, compiled into the extension and the CLI as a constant at build time. The repo ships an empty `hardening.config.json` (every key has a default); CI can replace it from the `HARDENING_CONFIG` secret. Nothing on the user's machine can change it.
 
 ```json
 {
@@ -44,13 +44,13 @@ Enforcement:
 
 Users configure the provider base URL, models and indexing endpoint inside the extension. Each value is validated against the matching scope on entry, with an error naming the host and the scope. Users cannot widen the list.
 
-TLS: internal CAs in the OS trust store already work. The release CLI runs with `--use-system-ca` (`packages/opencode/script/build.ts:334`) and the extension sets `NODE_USE_SYSTEM_CA=1` (`server-manager.ts:132`). Verified from source, not at runtime.
+TLS: internal CAs in the OS trust store already work. The release CLI runs with `--use-system-ca` (`packages/opencode/script/build.ts:334`) and the extension sets `NODE_USE_SYSTEM_CA=1` (`server-manager.ts`). Verified from source, not at runtime.
 
 Documented gaps: native addons; on Windows, child processes that ignore proxy variables; the webview renderer (handled by CSP); the system browser opened by `openExternal`.
 
 ## Design summary
 
-`packages/kilo-hardening/` holds the config schema, the baked config module, the host matcher (exact, suffix, CIDR via `ipaddr.js`), the guard, the proxy and the spawn-env builder. A path containing `kilo` is exempt from `kilocode_change` markers and the annotation check, which keeps the upstream diff to the hook lines listed below. Dev builds additionally accept `KILO_HARDENING_CONFIG` for tests; production builds ignore it.
+`packages/kilo-hardening/` holds the config schema, the baked config module, the host matcher (exact, suffix, CIDR via `ipaddr.js`), the guard, the proxy and the spawn-env builder. A path containing `kilo` is exempt from `kilocode_change` markers and the annotation check, which keeps the upstream diff to the hook lines listed below.
 
 ## Patch list
 
@@ -75,9 +75,9 @@ Size: lines changed in upstream files (new files not counted). "Hook" means a on
 | 14 | Webview CSP: `img-src` limited to `cspSource` and `data:` | `src/webview-html-utils.ts` | 1 | 0 |
 | 15 | Web search: build-config flags into spawn env, permission default `ask` (or as decided), optional audit log, redact Exa key in URLs/errors | `websearch.ts` audit hook | ~3 | ~80 |
 | 16 | Web fetch: guard denial returned as a readable tool error; default per decision | `webfetch.ts` | ~2 | ~20 |
-| 17 | `docs/HARDENING.md` patch inventory and `script/hardening/rebase.ts` (rebase onto a tag, report conflicts per patch) | none | 0 | ~150 |
-| 18 | CI canary: URL/host scanner over in-scope runtime source vs `hardening/reviewed-hosts.txt` | `script/check-workflows.ts` allowlist + one workflow | ~2 | ~200 |
-| 19 | Integration test: CLI + mock OpenAI server in a `--network none` container, scripted session, assert zero guard denials (built from the Phase 0 harness) | workflow | 0 | ~250 |
+| 17 | `docs/HARDENING.md` patch inventory and `packages/kilo-hardening/script/sync.ts` (replay onto a tag, report conflicts per patch) | none | 0 | ~150 |
+| 18 | CI canary: URL/host scanner over in-scope runtime source vs `packages/kilo-hardening/reviewed-hosts.txt` | `script/check-workflows.ts` allowlist + one workflow | ~2 | ~200 |
+| 19 | Integration test: CLI + mock OpenAI server in a network namespace with only loopback, under strace, scripted session, assert zero guard denials (built from the Phase 0 harness) | workflow | 0 | ~250 |
 | 20 | VSIX build per platform with checksums, config injection, IT rollout doc | workflow | 0 | ~150 |
 
 Total upstream-file footprint estimate: about 75 lines across about 30 files, plus manifest handling done at build time. Patches 2-16 are R1-R5 and R9; 17-20 are R6-R8.

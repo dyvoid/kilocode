@@ -14,8 +14,8 @@ Every key is optional. The committed file is `{}`: identity `dyvoid.code-agent`,
 |---|---|
 | `identity.publisher`, `identity.name`, `identity.displayName` | Extension identity. `name` also replaces `kilo` as the config/data directory name and `kilo-code` as the command and settings namespace |
 | `provider.baseURL`, `provider.id`, `provider.name`, `provider.models` | Optional preconfigured OpenAI-compatible provider; only `baseURL` is required (`id` defaults to `llm`, `models` to none). Without it users add their own provider in the extension. Either way the base URL must be on loopback or `allow.app` |
-| `allow.app` | Hosts the CLI and the extension may reach: provider, indexing endpoints, internal links. Entries: `{ "host": "..." }`, `{ "suffix": "..." }`, `{ "cidr": "..." }`, each with optional `"ports": [...]` |
-| `allow.tools` | Hosts the model's tools may reach: agent commands (`bash`, `git`, `curl`), web fetch, MCP servers, the automated browser |
+| `allow.app` | Hosts the CLI and the extension may reach for their own features: provider, indexing endpoints, internal links. Entries: `{ "host": "..." }`, `{ "suffix": "..." }`, `{ "cidr": "a.b.c.d/n" }`, each with optional `"ports": [...]`. Hosts are names or four-part IPv4/IPv6 addresses; a port-restricted entry never matches an unknown port |
+| `allow.tools` | Hosts the model may direct traffic to: agent commands (`bash`, `git`, `curl`), web fetch, remote MCP servers, the automated browser. The CLI process itself may reach `app` and `tools` hosts (its `cli` scope); model-chosen destinations are checked against `tools` only |
 | `features.autocomplete`, `features.speechToText`, `features.imageGeneration` | Hidden features that can be switched back on. They need a non-gateway backend first (see Gaps) |
 | `features.externalLinks` | Open documentation/support links in the system browser. Off: only allowlisted links open |
 | `websearch.providers` | `[]`, `["exa"]`, `["parallel"]`. Each enabled provider's host is added to `allow.app` automatically |
@@ -29,16 +29,20 @@ Loopback (`localhost`, `127.0.0.0/8`, `::1`) is always allowed in both scopes.
 ## How enforcement works
 
 1. **Gates in code.** Features the build does not ship never attempt a connection: telemetry has no client, the Kilo gateway, marketplace, remote, cloud-session and console routes answer 404, built-in auth/provider plugins are not loaded, models.dev, share, presence, autoupdate and LSP downloads are forced off, npm installs and the ripgrep download are refused, and the PR link poller, session export and connectivity probe are off. The CLI config layer (`packages/opencode/src/kilocode/hardening/config.ts`) enforces the provider set, plugins, MCP, remote instructions/skills, indexing, sandbox and web tool permissions after every config source has been merged, and reports what it dropped as config warnings.
-2. **Egress guard.** The CLI imports `@kilocode/kilo-hardening/install` first in its entry and in each worker. It wraps `fetch` (following redirects itself so each hop is checked), `WebSocket`, `Bun.connect`, `net`/`tls` sockets and `http(s).request/get`. The extension's guard is scoped to its own bundle, because the extension host is shared with other extensions: an esbuild plugin points our `net`, `tls`, `http`, `https` and `vscode` imports at guarded shims and rewrites `fetch`/`WebSocket`. A denial throws `EgressDeniedError` naming the host and scope and appends a JSON line to `<data>/log/egress-denied.log`.
-3. **Allowlist proxy.** The extension runs a token-protected proxy on `127.0.0.1` with one port per scope and starts the CLI with `HTTP(S)_PROXY`/`ALL_PROXY` set to the tools port, after every other variable so nothing overrides it. The CLI's own fetches use the app port; its child processes inherit the tools port. The proxy checks names before DNS and checks CIDR rules against the address it dials.
+2. **Egress guard.** The CLI imports `@kilocode/kilo-hardening/install` first in its entry and in each worker. It wraps `fetch` and `fetch.preconnect` (following redirects itself so each hop is checked, and refusing redirects to non-HTTP schemes), `WebSocket`, `Bun.connect`, `Bun.udpSocket`, `net`/`tls` sockets, `http(s).request/get`, `http.ClientRequest` and `dgram`; Bun's built-in SQL, Redis and S3 clients are switched off and `s3://` paths in `Bun.file`/`Bun.write` are refused. Web fetch narrows each request and its redirects to the tools scope. Code that resolves and vets a name itself and dials the address (the command sandbox's proxy) marks the connection with the vetted name (`Symbol.for("kilo.hardening.checked")`), which the guard checks instead of the address. Only `http(s)`/`ws(s)` URLs to allowed hosts and local `data:`/`blob:`/`file:` URLs pass. Proxy variables naming a host outside the allowlist are removed at startup, and fetches they would carry are refused. The extension's guard is scoped to its own bundle, because the extension host is shared with other extensions: an esbuild plugin points our `net`, `tls`, `http`, `https`, `http2`, `dgram` and `vscode` imports at guarded shims and rewrites `fetch`/`WebSocket`. A denial throws `EgressDeniedError` naming the host and scope and appends a JSON line to `<data>/log/egress-denied.log`.
+3. **Allowlist proxy.** The extension runs a proxy on `127.0.0.1` with two ports, each with its own token: `cli` (app and tools hosts) for the CLI's own fetches, and `tools` for everything the CLI starts. The CLI gets `HTTP(S)_PROXY`/`ALL_PROXY` set to the tools port, after every other variable so nothing overrides it; commands the model runs never see the cli port or its token. The proxy checks names before DNS and checks CIDR rules against the address it dials.
 4. **Sandbox.** Where a backend exists, agent commands run sandboxed with network limited to the tools hosts, which also covers tools that ignore proxy variables.
 
 ## Gaps
 
 - Native addons and child processes that ignore proxy variables are not covered on Windows (no sandbox backend) or on Linux without bubblewrap. The CLI reports a config warning when the sandbox is unavailable.
-- Agent Manager runs `git` against the repository's configured remotes from the extension host, as the user's own git would.
-- The webview renderer is not covered by the guard; its CSP blocks remote images and its network access goes through the extension.
-- Links opened in the system browser leave VS Code; non-allowlisted http(s) links do not open unless `features.externalLinks` is on.
+- The sandbox's own proxy takes exact host names on public addresses: `allow.tools` IP, CIDR and suffix entries, and hosts that resolve to private addresses, are not reachable from sandboxed commands. Without a port list a host is opened on 443 and 80. The VSIX build log counts such entries.
+- `Bun.fetch` is read-only and cannot be wrapped. In the CLI it still goes through the proxy variables (the extension's tools proxy); run standalone, nothing checks it. The canary fails if runtime source calls it.
+- DNS is not filtered: lookups go to the system resolver, and names only a CIDR entry could allow are resolved before the check. For such names the in-process check and the connection resolve separately (DNS rebinding); the allowlist proxy dials the address it checked.
+- Agent Manager runs `git` and `gh` against the repository's configured remotes and GitHub from the extension host, as the user's own tools would.
+- The webview renderer is not covered by the guard; its CSP blocks remote images and its network access goes through the extension. A link clicked in a webview that the webview does not hand to the extension is opened by VS Code itself, behind its own external-link prompt.
+- Links opened through the extension leave VS Code only for allowlisted http(s) hosts (any http(s) host with `features.externalLinks`), `mailto:` and this extension's own `vscode://` handler.
+- The CLI still reads `~/.kilo` and `~/.kilocode` (upstream's home config and skills directories), so a side-by-side upstream install's config there applies too, after the restricted-build policy.
 - Autocomplete, speech-to-text and image generation only have Kilo-gateway backends today. Turning their features on needs a generic backend first (for autocomplete: a FIM target that posts `prompt` + `suffix` to `/v1/completions`).
 - LanceDB (the default local vector store) is installed from npm on first use, which the build refuses. Indexing needs Qdrant until LanceDB ships in the VSIX.
 - Upstream unit test `orphan-size … unreadable directory` fails when tests run as root; this predates the fork.
@@ -49,10 +53,10 @@ Loopback (`localhost`, `127.0.0.0/8`, `::1`) is always allowed in both scopes.
 |---|---|
 | Unit tests (matcher, policy, guard, proxy, bundle, identity, canary) | `bun test` |
 | URL canary: every host in runtime source is reviewed | `bun script/canary.ts` |
-| Zero-egress integration test | `bun script/egress-test.ts` (CI runs it in a `--network none` container) |
+| Zero-egress integration test | `bun script/egress-test.ts` (CI runs it under strace in a network namespace with only loopback) |
 | Inventory below is current | `bun script/inventory.ts --check` |
 
-CI: `.github/workflows/hardening.yml` runs all of these on every pull request and push, plus the CLI and extension typecheck, lint, knip and unit tests; the egress test runs in a fresh network namespace with only loopback. `.github/workflows/hardening-vsix.yml` builds the VSIX packages and `SHA256SUMS` from the `HARDENING_CONFIG` secret. Upstream's release workflows only run in `Kilo-Org/kilocode`; other upstream workflows (JetBrains, docs, community automation) still trigger in the fork and can be disabled in the repository's Actions settings without touching their files.
+CI: `.github/workflows/hardening.yml` runs all of these on pull requests and on pushes to `main`, `claude/**` and `hardened/**`, plus the CLI and extension typecheck, lint, knip and unit tests; the egress test runs in a fresh network namespace with only loopback. `.github/workflows/hardening-vsix.yml` builds the VSIX packages and `SHA256SUMS` from the `HARDENING_CONFIG` secret, versioned from the `hardened-vX.Y.Z` tag or the run's `version` input. Upstream's release workflows only run in `Kilo-Org/kilocode`; other upstream workflows (JetBrains, docs, community automation) still trigger in the fork and can be disabled in the repository's Actions settings without touching their files.
 
 ## Syncing with upstream
 
@@ -62,7 +66,7 @@ bun script/sync.ts v7.8.13 --report sync-v7.8.13.md   # replay every patch, repo
 bun script/sync.ts v7.8.13 --stop                      # or stop at the first conflict to resolve it
 ```
 
-The script creates `hardened/sync-<tag>` at the upstream tag and cherry-picks the stack. `bun.lock` conflicts resolve by taking upstream's file and running `bun install`; source conflicts by re-applying the patch's intent on the new code. After a clean replay: run the checks above, update `UPSTREAM`, regenerate this inventory, then move the main branch to the sync branch.
+The script creates `hardened/sync-<tag>` at the upstream tag and cherry-picks every `[hardened]` commit. Other commits are listed, not replayed; merge commits are skipped, so keep fixes out of merges. A conflict only in `bun.lock` keeps upstream's lockfile and applies the rest of the patch; run `bun install` afterwards. Source conflicts are resolved by re-applying the patch's intent on the new code. After `--stop`, resolve, `git cherry-pick --continue`, and rerun with `--from <your branch>`. After a clean replay: run the checks above, update `UPSTREAM`, regenerate this inventory, then move the main branch to the sync branch.
 
 ## Patch inventory
 
@@ -89,6 +93,9 @@ Generated by `bun script/inventory.ts`: every `[hardened]` patch that edits a fi
 | feat: ship ripgrep in the VSIX | `packages/core/src/ripgrep/binary.ts`<br>`packages/kilo-vscode/script/build.ts` |
 | ci: hardening checks and VSIX build workflows | `script/check-workflows.ts` |
 | docs: explain the fork at the top of the README | `README.md` |
+| fix(hardening): close egress guard gaps found in review | `packages/kilo-sandbox/src/proxy.ts`<br>`packages/kilo-vscode/src/services/browser-automation/browser-proxy.ts`<br>`packages/opencode/src/kilocode/process/env.ts`<br>`packages/opencode/src/plugin/openai/ws.ts` |
+| fix(cli): tighten route gate and config policy | `packages/opencode/src/kilocode/indexing.ts`<br>`packages/opencode/src/mcp/index.ts`<br>`packages/opencode/src/server/routes/instance/httpapi/server.ts`<br>`packages/opencode/src/tool/webfetch.ts` |
+| fix(vscode): hide remaining cloud entry points; safer packaging | `packages/kilo-vscode/script/build.ts`<br>`packages/kilo-vscode/src/extension.ts`<br>`packages/kilo-vscode/webview-ui/src/components/history/HistoryView.tsx`<br>`packages/kilo-vscode/webview-ui/src/components/settings/ModelsTab.tsx`<br>`packages/kilo-vscode/webview-ui/src/components/settings/Settings.tsx`<br>`packages/kilo-vscode/webview-ui/src/components/settings/settings-search.ts` |
 <!-- inventory:end -->
 
 ## Sync log
