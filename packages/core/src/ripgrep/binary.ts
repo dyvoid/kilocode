@@ -103,9 +103,12 @@ export namespace RipgrepBinary {
             const config = PLATFORM[platformKey]
             if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
 
-            // kilocode_change start - restricted-egress build ships rg instead of downloading it
-            if (Hardening.off())
-              throw new Error("ripgrep (rg) was not found on PATH or in the bin directory, and downloads are disabled in this build")
+            // kilocode_change start - restricted-egress build ships rg next to the CLI binary instead of downloading it
+            if (Hardening.off()) {
+              const bundled = path.join(path.dirname(process.execPath), path.basename(target))
+              if (yield* fs.isFile(bundled).pipe(Effect.orDie)) return bundled
+              throw new Error("ripgrep (rg) was not found on PATH, next to the CLI or in the bin directory, and downloads are disabled in this build")
+            }
             // kilocode_change end
             const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
             const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`

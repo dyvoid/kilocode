@@ -10,6 +10,7 @@ import {
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { evidence as sbom } from "./sbom"
 import * as Identity from "../../kilo-hardening/script/identity"
+import * as Ripgrep from "../../kilo-hardening/script/ripgrep"
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
@@ -97,6 +98,9 @@ for (const config of targets) {
   }
 
   console.log(`  ✅ Binary ready at ${targetBinary}`)
+
+  // Restricted-egress build: ripgrep ships in the VSIX instead of being downloaded at runtime.
+  await Ripgrep.bundle(config.target, binDir)
 
   console.log("Adding bundled FFmpeg helper...")
   await ensureFfmpegForTarget(config.target, binDir)
