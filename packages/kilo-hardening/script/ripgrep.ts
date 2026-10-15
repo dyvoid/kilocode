@@ -2,7 +2,8 @@
 /**
  * Build-time: puts ripgrep next to the CLI binary in the VSIX's bin/ so the restricted build never
  * downloads it at runtime (the CLI looks there when hardened, see core/src/ripgrep/binary.ts).
- * The archive is checked against the .sha256 file ripgrep publishes with each release asset.
+ * Each archive is checked against a SHA-256 pinned here (taken from ripgrep's release, 2026-10-15), so a
+ * replaced release asset fails the build instead of shipping. Bumping VERSION means re-pinning every hash.
  *
  * Usage: bun script/ripgrep.ts <vsce-target> <bin-dir>
  */
@@ -16,15 +17,43 @@ import path from "node:path"
 export const VERSION = "15.1.0"
 
 /** ripgrep release platform per VSIX target. alpine-arm64 has no musl build: it relies on a system rg. */
-export const TARGETS: Record<string, { platform: string; extension: "tar.gz" | "zip" } | undefined> = {
-  "linux-x64": { platform: "x86_64-unknown-linux-musl", extension: "tar.gz" },
-  "linux-arm64": { platform: "aarch64-unknown-linux-gnu", extension: "tar.gz" },
-  "alpine-x64": { platform: "x86_64-unknown-linux-musl", extension: "tar.gz" },
+export const TARGETS: Record<string, { platform: string; extension: "tar.gz" | "zip"; sha256: string } | undefined> = {
+  "linux-x64": {
+    platform: "x86_64-unknown-linux-musl",
+    extension: "tar.gz",
+    sha256: "1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599",
+  },
+  "linux-arm64": {
+    platform: "aarch64-unknown-linux-gnu",
+    extension: "tar.gz",
+    sha256: "2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e",
+  },
+  "alpine-x64": {
+    platform: "x86_64-unknown-linux-musl",
+    extension: "tar.gz",
+    sha256: "1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599",
+  },
   "alpine-arm64": undefined,
-  "darwin-x64": { platform: "x86_64-apple-darwin", extension: "tar.gz" },
-  "darwin-arm64": { platform: "aarch64-apple-darwin", extension: "tar.gz" },
-  "win32-x64": { platform: "x86_64-pc-windows-msvc", extension: "zip" },
-  "win32-arm64": { platform: "aarch64-pc-windows-msvc", extension: "zip" },
+  "darwin-x64": {
+    platform: "x86_64-apple-darwin",
+    extension: "tar.gz",
+    sha256: "64811cb24e77cac3057d6c40b63ac9becf9082eedd54ca411b475b755d334882",
+  },
+  "darwin-arm64": {
+    platform: "aarch64-apple-darwin",
+    extension: "tar.gz",
+    sha256: "378e973289176ca0c6054054ee7f631a065874a352bf43f0fa60ef079b6ba715",
+  },
+  "win32-x64": {
+    platform: "x86_64-pc-windows-msvc",
+    extension: "zip",
+    sha256: "124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a",
+  },
+  "win32-arm64": {
+    platform: "aarch64-pc-windows-msvc",
+    extension: "zip",
+    sha256: "00d931fb5237c9696ca49308818edb76d8eb6fc132761cb2a1bd616b2df02f8e",
+  },
 }
 
 function find(dir: string, name: string): string | undefined {
@@ -49,14 +78,9 @@ export async function bundle(target: string, bin: string) {
   }
   const file = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
   const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${file}`
-  const [archive, sum] = await Promise.all([
-    fetch(url).then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(`${url}: ${res.status}`)))),
-    fetch(`${url}.sha256`).then((res) => (res.ok ? res.text() : Promise.reject(new Error(`${url}.sha256: ${res.status}`)))),
-  ])
-  // Unix assets: "<hash>  <file>"; Windows assets: CertUtil output. Take the hash token.
-  const want = /\b[0-9a-f]{64}\b/i.exec(sum)?.[0]?.toLowerCase()
+  const archive = await fetch(url).then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(`${url}: ${res.status}`))))
   const got = createHash("sha256").update(new Uint8Array(archive)).digest("hex")
-  if (!want || want !== got) throw new Error(`ripgrep checksum mismatch for ${file}: expected ${want}, got ${got}`)
+  if (got !== config.sha256) throw new Error(`ripgrep checksum mismatch for ${file}: expected ${config.sha256}, got ${got}`)
 
   const dir = mkdtempSync(path.join(os.tmpdir(), "ripgrep-"))
   const local = path.join(dir, file)

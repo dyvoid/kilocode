@@ -572,7 +572,7 @@ export async function activate(context: vscode.ExtensionContext) {
     (item) => marketplacePanelProvider.focusItem(item),
   )
   context.subscriptions.push(marketplaceNotifier)
-  marketplaceNotifier.start()
+  if (!Hardening.off()) marketplaceNotifier.start()
 
   // Create sub-agent viewer provider (read-only editor panel for sub-agent sessions)
   const subAgentViewerProvider = new SubAgentViewerProvider(context.extensionUri, connectionService, context)

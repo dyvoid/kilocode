@@ -14,6 +14,7 @@
 
 import { dict as en } from "../../i18n/en"
 import { dict as agentManagerEn } from "../../../agent-manager/i18n/en"
+import { shown } from "@kilocode/kilo-hardening/ui"
 
 export interface SettingsTab {
   id: string
@@ -161,7 +162,12 @@ export function deriveSettingsEntries(keys: Iterable<string>): SettingsEntry[] {
 export const SETTINGS_ENTRIES: SettingsEntry[] = deriveSettingsEntries([
   ...Object.keys(en),
   ...Object.keys(agentManagerEn),
-])
+]).filter(
+  // Restricted-egress build: rows for hidden features are not rendered, so they are not searchable.
+  (entry) =>
+    (shown("autocomplete") || !entry.titleKey.startsWith("settings.autocomplete.")) &&
+    (shown("speechToText") || !entry.titleKey.startsWith("settings.models.speechToText")),
+)
 
 export interface SettingsSearchResult {
   /** Tab id to open. */

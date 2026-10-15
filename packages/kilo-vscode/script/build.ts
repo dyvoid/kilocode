@@ -12,6 +12,15 @@ import { evidence as sbom } from "./sbom"
 import * as Identity from "../../kilo-hardening/script/identity"
 import * as Ripgrep from "../../kilo-hardening/script/ripgrep"
 
+// Restricted-egress build: own publisher, name and command/setting namespace. Tracked manifest files are
+// put back after packaging (with this run's version, as upstream leaves it). A backup left by an
+// interrupted build is restored first, so the version rewrite below starts from the real manifest.
+// The transform itself runs after esbuild, below.
+const extensionDir = join(import.meta.dir, "..")
+Identity.restore(extensionDir)
+process.on("exit", () => Identity.restore(extensionDir))
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => process.exit(130))
+
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
 const version = process.env.KILO_VERSION ? process.env.KILO_VERSION : packageJson.version
@@ -65,12 +74,8 @@ console.log("\n📦 Compiling extension...")
 await $`bun run check-types`
 await $`bun run lint`
 await $`node ${join(import.meta.dir, "..", "esbuild.js")} --production`
-
-// Restricted-egress build: own publisher, name and command/setting namespace. Tracked manifest files are
-// restored when this script exits, so a local build leaves the checkout clean.
-const extensionDir = join(import.meta.dir, "..")
+// Rename after bundling: the transform rewrites the manifest and the freshly built dist/.
 Identity.apply(extensionDir)
-process.on("exit", () => Identity.restore(extensionDir))
 
 for (const config of targets) {
   console.log(`\n🎯 Processing target: ${config.target}`)

@@ -22,6 +22,7 @@ import {
 import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
+import { shown } from "@kilocode/kilo-hardening/ui"
 
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting, features } = useConfig()
@@ -205,91 +206,95 @@ const ModelsTab: Component = () => {
             description={language.t("settings.context.compactionModel.description")}
           />
         </SettingsRow>
-        <SettingsRow
-          title={language.t("settings.autocomplete.model.title")}
-          description={language.t("settings.autocomplete.model.description")}
-        >
-          <ModelSelectorBase
-            value={getAutocompleteSelection(autocompleteProvider(), autocompleteModel())}
-            onSelect={handleAutocompleteModelSelect}
-            placement="bottom-start"
-            models={AUTOCOMPLETE_SELECTOR_MODELS}
-            favorites={false}
-            allowClear
-            clearLabel={language.t("settings.providers.notSet")}
-            label={language.t("settings.autocomplete.model.title")}
+        <Show when={shown("autocomplete")}>
+          <SettingsRow
+            title={language.t("settings.autocomplete.model.title")}
             description={language.t("settings.autocomplete.model.description")}
-          />
-        </SettingsRow>
-        <SettingsRow
-          title={language.t("settings.models.speechToTextBaseUrl.title")}
-          description={language.t("settings.models.speechToTextBaseUrl.description")}
-        >
-          <TextField
-            value={config().experimental?.speech_to_text_base_url ?? ""}
-            placeholder={language.t("settings.models.speechToTextBaseUrl.placeholder")}
-            onChange={(value: string) => updateSpeech({ speech_to_text_base_url: value.trim() || null })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          title={language.t("settings.models.speechToTextApiKey.title")}
-          description={language.t("settings.models.speechToTextApiKey.description")}
-        >
-          <TextField
-            type="password"
-            value={config().experimental?.speech_to_text_api_key ?? ""}
-            placeholder={language.t("settings.models.speechToTextApiKey.placeholder")}
-            disabled={!customSpeech()}
-            onChange={(value: string) => updateSpeech({ speech_to_text_api_key: value.trim() || null })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          title={language.t("settings.models.speechToTextModel.title")}
-          description={
-            !features().speechToText
-              ? language.t("settings.models.speechToText.remoteDescription")
-              : customSpeech()
-                ? language.t("settings.models.speechToTextModel.customDescription")
-                : kiloReady()
-                  ? language.t("settings.models.speechToTextModel.description")
-                  : language.t("settings.models.speechToText.disabledDescription")
-          }
-        >
-          <Show
-            when={!customSpeech()}
-            fallback={
-              <TextField
-                value={config().experimental?.speech_to_text_model ?? ""}
-                placeholder={language.t("settings.models.speechToTextModel.customPlaceholder")}
-                onChange={(value: string) => updateSpeech({ speech_to_text_model: value.trim() || null })}
-              />
+          >
+            <ModelSelectorBase
+              value={getAutocompleteSelection(autocompleteProvider(), autocompleteModel())}
+              onSelect={handleAutocompleteModelSelect}
+              placement="bottom-start"
+              models={AUTOCOMPLETE_SELECTOR_MODELS}
+              favorites={false}
+              allowClear
+              clearLabel={language.t("settings.providers.notSet")}
+              label={language.t("settings.autocomplete.model.title")}
+              description={language.t("settings.autocomplete.model.description")}
+            />
+          </SettingsRow>
+        </Show>
+        <Show when={shown("speechToText")}>
+          <SettingsRow
+            title={language.t("settings.models.speechToTextBaseUrl.title")}
+            description={language.t("settings.models.speechToTextBaseUrl.description")}
+          >
+            <TextField
+              value={config().experimental?.speech_to_text_base_url ?? ""}
+              placeholder={language.t("settings.models.speechToTextBaseUrl.placeholder")}
+              onChange={(value: string) => updateSpeech({ speech_to_text_base_url: value.trim() || null })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={language.t("settings.models.speechToTextApiKey.title")}
+            description={language.t("settings.models.speechToTextApiKey.description")}
+          >
+            <TextField
+              type="password"
+              value={config().experimental?.speech_to_text_api_key ?? ""}
+              placeholder={language.t("settings.models.speechToTextApiKey.placeholder")}
+              disabled={!customSpeech()}
+              onChange={(value: string) => updateSpeech({ speech_to_text_api_key: value.trim() || null })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={language.t("settings.models.speechToTextModel.title")}
+            description={
+              !features().speechToText
+                ? language.t("settings.models.speechToText.remoteDescription")
+                : customSpeech()
+                  ? language.t("settings.models.speechToTextModel.customDescription")
+                  : kiloReady()
+                    ? language.t("settings.models.speechToTextModel.description")
+                    : language.t("settings.models.speechToText.disabledDescription")
             }
           >
-            <Tooltip
-              value={language.t("settings.models.speechToText.disabledDescription")}
-              placement="top"
-              inactive={kiloReady()}
+            <Show
+              when={!customSpeech()}
+              fallback={
+                <TextField
+                  value={config().experimental?.speech_to_text_model ?? ""}
+                  placeholder={language.t("settings.models.speechToTextModel.customPlaceholder")}
+                  onChange={(value: string) => updateSpeech({ speech_to_text_model: value.trim() || null })}
+                />
+              }
             >
-              <Select
-                options={speechOptions()}
-                current={speechOption()}
-                value={(item) => item.value}
-                label={(item) => `${item.label} (${item.provider})`}
-                onSelect={(item) =>
-                  updateSpeech({ speech_to_text_model: item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id })
-                }
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-                triggerProps={{
-                  "aria-label": `${language.t("settings.models.speechToTextModel.title")}: ${speechOption()?.label}`,
-                }}
-                disabled={!kiloReady()}
-                placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
-              />
-            </Tooltip>
-          </Show>
-        </SettingsRow>
+              <Tooltip
+                value={language.t("settings.models.speechToText.disabledDescription")}
+                placement="top"
+                inactive={kiloReady()}
+              >
+                <Select
+                  options={speechOptions()}
+                  current={speechOption()}
+                  value={(item) => item.value}
+                  label={(item) => `${item.label} (${item.provider})`}
+                  onSelect={(item) =>
+                    updateSpeech({ speech_to_text_model: item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id })
+                  }
+                  variant="secondary"
+                  size="small"
+                  triggerVariant="settings"
+                  triggerProps={{
+                    "aria-label": `${language.t("settings.models.speechToTextModel.title")}: ${speechOption()?.label}`,
+                  }}
+                  disabled={!kiloReady()}
+                  placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
+                />
+              </Tooltip>
+            </Show>
+          </SettingsRow>
+        </Show>
         <SettingsRow
           title={language.t("settings.models.hidePromptTraining.title")}
           description={language.t("settings.models.hidePromptTraining.description")}

@@ -55,4 +55,22 @@ group("identity", () => {
     expect(readFileSync(path.join(dir, "package.nls.json"), "utf8")).toBe(`{"x":"kilo-code.new.a"}`)
     rmSync(dir, { recursive: true, force: true })
   })
+
+  test("a stale backup from an interrupted build does not undo later manifest edits", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "identity-"))
+    const file = path.join(dir, "package.json")
+    writeFileSync(file, JSON.stringify({ ...upstream, version: "1.0.0" }))
+    apply(dir, cfg) // interrupted: no restore, backup left behind
+    expect(JSON.parse(readFileSync(file, "utf8")).name).toBe("code-agent")
+    apply(dir, cfg) // a rerun reuses the backup
+    restore(dir)
+    expect(JSON.parse(readFileSync(file, "utf8")).version).toBe("1.0.0")
+    apply(dir, cfg)
+    writeFileSync(file, JSON.stringify({ ...upstream, version: "2.0.0" })) // e.g. git checkout over a stale build
+    apply(dir, cfg)
+    expect(JSON.parse(readFileSync(file, "utf8")).version).toBe("2.0.0")
+    restore(dir)
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ name: "kilo-code", version: "2.0.0" })
+    rmSync(dir, { recursive: true, force: true })
+  })
 })

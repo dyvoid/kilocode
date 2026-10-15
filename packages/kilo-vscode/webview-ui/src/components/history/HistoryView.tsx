@@ -156,9 +156,11 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
             </button>
           </Show>
         </div>
-        <Button variant="secondary" size="small" onClick={openImport} class="history-import-btn">
-          {language.t("session.cloud.import")}
-        </Button>
+        <Show when={!hardened}>
+          <Button variant="secondary" size="small" onClick={openImport} class="history-import-btn">
+            {language.t("session.cloud.import")}
+          </Button>
+        </Show>
       </div>
 
       <div

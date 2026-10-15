@@ -336,6 +336,7 @@ const Settings: Component<SettingsProps> = (props) => {
       if (tab.id === "indexing") return features().indexing
       if (tab.id === "sandboxing") return sandboxing()
       if (tab.id === "agentManager") return props.agentManagerSettings === true
+      if (tab.id === "autocomplete") return shown("autocomplete")
       return true
     }),
   )
