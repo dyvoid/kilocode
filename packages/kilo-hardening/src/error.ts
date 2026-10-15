@@ -9,7 +9,7 @@ export class EgressDeniedError extends Error {
     readonly via: string,
   ) {
     super(
-      `Network access to ${host} is blocked: it is not on this build's ${scope} allowlist. ` +
+      `Network access to ${host} is blocked: it is not on this build's ${scope === "cli" ? "" : `${scope} `}allowlist. ` +
         `The allowlist is set when the extension is built and cannot be changed on this machine.`,
     )
     this.name = "EgressDeniedError"

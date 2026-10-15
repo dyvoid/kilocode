@@ -16,6 +16,7 @@ import { connect, isIP, type Socket } from "node:net"
 import type { Duplex } from "node:stream"
 import { parse } from "./browser-policy"
 import { Hardening, permit } from "@kilocode/kilo-hardening"
+import { connectAs } from "@kilocode/kilo-hardening/node"
 
 interface Options {
   lookup?: (host: string, signal: AbortSignal) => Promise<readonly { address: string; family: number }[]>
@@ -359,7 +360,7 @@ export class BrowserProxy {
     }
     if (url.hash) throw new TypeError("Invalid proxy request URL")
     // Restricted-egress build: the browser the model drives reaches only loopback and tools-scope hosts.
-    if (Hardening.off()) permit("tools", url.hostname, Number(url.port) || undefined, "browser")
+    if (Hardening.off()) permit("tools", url.hostname, Number(url.port || (url.protocol === "https:" ? 443 : 80)), "browser")
     return url
   }
 
@@ -392,13 +393,12 @@ export class BrowserProxy {
       signal.throwIfAborted()
       const family = isIP(address.address)
       if (family !== 4 && family !== 6) throw new Error("Invalid proxy address family")
-      const socket = this.track(
-        (this.opts.connect ?? connect)({
-          host: address.address,
-          port: Number(url.port || (url.protocol === "https:" ? 443 : 80)),
-          family,
-        }),
-      )
+      const port = Number(url.port || (url.protocol === "https:" ? 443 : 80))
+      // Restricted-egress build: the name was checked against the tools scope; dial the address it resolved to.
+      const dial = Hardening.off()
+        ? (opts: { host: string; port: number; family: number }) => connectAs("tools", url.hostname, port, opts)
+        : connect
+      const socket = this.track((this.opts.connect ?? dial)({ host: address.address, port, family }))
       const attempt = scope(socket, signal, timeout)
       try {
         await once(socket, "connect", { signal: attempt.signal })

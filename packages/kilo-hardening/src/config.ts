@@ -1,7 +1,8 @@
 import raw from "../hardening.config.json"
 import { entry, type Entry } from "./match"
 
-export type Scope = "app" | "tools"
+/** `cli` is the CLI process's own traffic: app and tools hosts. Model-chosen destinations are checked against `tools` explicitly. */
+export type Scope = "app" | "tools" | "cli"
 
 export type Search = "exa" | "parallel"
 
@@ -21,7 +22,7 @@ export interface Config {
   identity: { publisher: string; name: string; displayName: string }
   /** Optional preconfigured provider. Without it users add their own OpenAI-compatible provider in settings. */
   provider?: Provider
-  allow: Record<Scope, Entry[]>
+  allow: Record<"app" | "tools", Entry[]>
   features: { autocomplete: boolean; speechToText: boolean; imageGeneration: boolean; externalLinks: boolean }
   websearch: { providers: Search[]; permission: "ask" | "allow" | "deny"; audit: boolean }
   webfetch: "off" | "tools"
@@ -50,6 +51,12 @@ function text(value: unknown, path: string, fallback?: string) {
   if (value === undefined && fallback !== undefined) return fallback
   if (typeof value !== "string" || value.length === 0) fail(path, "must be a non-empty string")
   return value
+}
+
+function url(value: unknown, path: string) {
+  const result = text(value, path)
+  if (!URL.canParse(result) || !["http:", "https:"].includes(new URL(result).protocol)) fail(path, "must be an http(s) URL")
+  return result
 }
 
 function bool(value: unknown, path: string, fallback: boolean) {
@@ -82,16 +89,21 @@ function provider(input: unknown): Provider | undefined {
   return {
     id: slug(text(item.id, "provider.id", "llm"), "provider.id"),
     name: text(item.name, "provider.name", "LLM"),
-    baseURL: text(item.baseURL, "provider.baseURL"),
+    baseURL: url(item.baseURL, "provider.baseURL"),
     models: Object.fromEntries(
       Object.entries(models).map(([id, model]) => {
         const entry = object(model, `provider.models.${id}`, true)
         const limit = entry.limit === undefined ? undefined : object(entry.limit, `provider.models.${id}.limit`)
+        const size = (key: "context" | "output") => {
+          const value = limit?.[key]
+          if (!Number.isInteger(value) || (value as number) <= 0) fail(`provider.models.${id}.limit.${key}`, "must be a positive integer")
+          return value as number
+        }
         return [
           id,
           {
             name: text(entry.name, `provider.models.${id}.name`, id),
-            ...(limit && { limit: { context: Number(limit.context), output: Number(limit.output) } }),
+            ...(limit && { limit: { context: size("context"), output: size("output") } }),
           },
         ]
       }),
@@ -151,11 +163,13 @@ export function parse(input: unknown): Config {
 
 /**
  * The effective allowlist for a scope: configured entries plus the host of each enabled
- * search provider (app scope only). Loopback is implicit in the matcher, not listed here.
+ * search provider (app scope), or both lists for `cli`. Loopback is implicit in the matcher, not listed here.
  */
 export function entries(cfg: Config, scope: Scope): Entry[] {
   if (scope === "tools") return cfg.allow.tools
-  return [...cfg.allow.app, ...cfg.websearch.providers.map((item) => entry({ host: SEARCH_HOSTS[item] }))]
+  const app = [...cfg.allow.app, ...cfg.websearch.providers.map((item) => entry({ host: SEARCH_HOSTS[item] }))]
+  if (scope === "cli") return [...app, ...cfg.allow.tools]
+  return app
 }
 
 function freeze<T>(value: T): T {

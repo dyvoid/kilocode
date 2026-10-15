@@ -1,8 +1,37 @@
-import type { Config } from "./config"
+import { entries, type Config } from "./config"
+import { check, loopback, urlPort } from "./match"
 
 /** Variables naming the loopback allowlist proxy ports, set by the extension when it spawns the CLI. */
-export const PROXY_APP = "KILO_HARDENING_APP_PROXY"
+export const PROXY_CLI = "KILO_HARDENING_CLI_PROXY"
 export const PROXY_TOOLS = "KILO_HARDENING_TOOLS_PROXY"
+
+const PROXIES = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
+
+function parse(value: string) {
+  const text = value.includes("://") ? value : `http://${value}`
+  return URL.canParse(text) ? new URL(text) : undefined
+}
+
+/** The CLI's own proxy, accepted only on loopback (it is the extension's allowlist proxy). */
+export function cliProxy(env: NodeJS.ProcessEnv) {
+  const url = parse(env[PROXY_CLI] ?? "")
+  return url && loopback(url.hostname) ? url.href : undefined
+}
+
+/**
+ * Proxy variables naming a proxy outside the tools scope, to be removed: the proxy is the real network
+ * peer for every request that uses it, and Bun's fetch and child processes honour these variables.
+ */
+export function strayProxies(env: NodeJS.ProcessEnv, cfg: Config) {
+  const list = entries(cfg, "tools")
+  return PROXIES.flatMap((name) => {
+    const value = env[name]
+    if (!value) return []
+    const url = parse(value)
+    if (url && check(list, url.hostname, urlPort(url)) === "allow") return []
+    return [{ name, url: url?.href ?? `http://${value}` }]
+  })
+}
 
 /**
  * Environment the CLI forces on itself at startup (undefined = removed). Applied by `install` before
@@ -26,6 +55,9 @@ export function cliEnv(cfg: Config): Record<string, string | undefined> {
     KILO_ENABLE_EXA: exa ? "1" : undefined,
     KILO_ENABLE_PARALLEL: parallel ? "1" : undefined,
     KILO_WEBSEARCH_PROVIDER: exa ? "exa" : parallel ? "parallel" : undefined,
+    // Trace export to an OTLP collector: an allowlisted host would receive session traces.
+    OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
+    OTEL_EXPORTER_OTLP_HEADERS: undefined,
   }
 }
 

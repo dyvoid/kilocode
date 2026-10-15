@@ -1,12 +1,14 @@
 // Bundle-scoped replacement for `https` / `node:https` (see esbuild.cjs).
 import real from "node:https"
 import type { ClientRequest } from "node:http"
+import net from "node:net"
 import { requestTarget } from "../../guard"
-import { permitUrl } from "../../policy"
+import { permit } from "../../policy"
+import { view } from "./view"
 
 function check(args: unknown[], via: string) {
-  const url = requestTarget(args, "https:")
-  if (url) permitUrl("app", url, via)
+  const dest = requestTarget(args, "https:")
+  if (dest) permit("app", dest.host, dest.port, via)
 }
 
 export const request = ((...args: unknown[]) => {
@@ -19,6 +21,18 @@ export const get = ((...args: unknown[]) => {
   return (real.get as (...args: unknown[]) => ClientRequest)(...args)
 }) as typeof real.get
 
-export const { Agent, Server, createServer, globalAgent } = real
+/** Agents open their own sockets with the unshimmed net/tls, so their connections are checked here. */
+export class Agent extends real.Agent {
+  override createConnection(...args: unknown[]) {
+    const opts = (args[0] ?? {}) as net.NetConnectOpts & { host?: string; port?: number }
+    permit("app", String(opts.host || "localhost"), Number(opts.port || 443), "https.Agent")
+    return (super.createConnection as (...args: unknown[]) => ReturnType<real.Agent["createConnection"]>)(...args)
+  }
+}
 
-export default { ...real, request, get }
+export const { Server, createServer } = real
+
+/** This bundle's own default agent: the shared one opens connections without the checks above. */
+export const globalAgent = new Agent({ keepAlive: true })
+
+export default view(real, { request, get, Agent, globalAgent })

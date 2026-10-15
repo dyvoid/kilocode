@@ -5,16 +5,32 @@ const real = require("vscode")
 const links = require("../links")
 
 async function openExternal(target) {
-  const text = target.toString(true)
+  // Check the string VS Code will open (encoded), not the display form, which can parse to another host.
+  const text = target.toString()
   if (links.allowed(text)) return real.env.openExternal(target)
   links.refused(text)
   return false
 }
 
-const env = new Proxy(real.env, {
-  get: (target, key, receiver) => (key === "openExternal" ? openExternal : Reflect.get(target, key, receiver)),
-})
+// VS Code freezes `env` (and may freeze other API objects). A proxy over a frozen object must return the
+// real value for its read-only properties, so these views proxy an empty object and forward to the real one.
+function view(source, overrides) {
+  return new Proxy(
+    {},
+    {
+      get: (_, key) => (key in overrides ? overrides[key] : Reflect.get(source, key)),
+      has: (_, key) => key in overrides || Reflect.has(source, key),
+      ownKeys: () => [...new Set([...Reflect.ownKeys(source), ...Object.keys(overrides)])],
+      getOwnPropertyDescriptor: (_, key) => {
+        if (key in overrides) return { value: overrides[key], enumerable: true, configurable: true, writable: false }
+        const found = Reflect.getOwnPropertyDescriptor(source, key)
+        return found && { ...found, configurable: true }
+      },
+      set: (_, key, value) => Reflect.set(source, key, value),
+    },
+  )
+}
 
-module.exports = new Proxy(real, {
-  get: (target, key, receiver) => (key === "env" ? env : Reflect.get(target, key, receiver)),
-})
+const env = view(real.env, { openExternal })
+
+module.exports = view(real, { env })

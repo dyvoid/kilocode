@@ -3,6 +3,7 @@
 import real from "node:net"
 import { socketTarget } from "../../guard"
 import { permit } from "../../policy"
+import { view } from "./view"
 
 function check(args: unknown[], via: string) {
   const dest = socketTarget(args)
@@ -10,6 +11,10 @@ function check(args: unknown[], via: string) {
 }
 
 export class Socket extends real.Socket {
+  // Sockets made by net.connect, tls and http are real ones; they are still sockets to callers.
+  static override [Symbol.hasInstance](value: unknown) {
+    return value instanceof real.Socket
+  }
   override connect(...args: unknown[]) {
     check(args, "net.Socket.connect")
     return (super.connect as (...args: unknown[]) => this)(...args)
@@ -42,4 +47,4 @@ export const {
 
 export const Stream = Socket
 
-export default { ...real, Socket, Stream: Socket, connect, createConnection }
+export default view(real, { Socket, Stream: Socket, connect, createConnection })

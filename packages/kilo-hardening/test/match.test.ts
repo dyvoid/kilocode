@@ -58,6 +58,33 @@ group("entries", () => {
     expect(() => entry({ cidr: "10.0.0.0/33" })).toThrow()
     expect(() => entry({ host: "a", suffix: "b.c" })).toThrow()
     expect(() => entry({ host: "a.b", ports: [0] })).toThrow()
+    expect(() => entry({ host: "a.b", ports: [] })).toThrow()
+    expect(() => entry({ host: "a.com:443" })).toThrow()
+    expect(() => entry({ host: "a.com/x" })).toThrow()
+  })
+
+  test("short IPv4 forms and zero-length ranges are rejected", () => {
+    // ipaddr.js would read "192.168/16" as 192.0.0.168/16 and "10.1" as 10.0.0.1.
+    expect(() => entry({ cidr: "192.168/16" })).toThrow()
+    expect(() => entry({ cidr: "10/8" })).toThrow()
+    expect(() => entry({ cidr: "0.0.0.0/0" })).toThrow()
+    expect(() => entry({ cidr: "010.0.0.0/8" })).toThrow()
+    expect(() => entry({ host: "10.1" })).toThrow()
+    expect(entry({ cidr: "192.168.0.0/16" })).toMatchObject({ kind: "cidr" })
+    expect(entry({ cidr: "fd00::/8" })).toMatchObject({ kind: "cidr" })
+    expect(entry({ host: "10.0.0.1" })).toMatchObject({ host: "10.0.0.1" })
+    expect(entry({ host: "[fd00::1]" })).toMatchObject({ host: "fd00::1" })
+  })
+
+  test("international names are stored as punycode, as URLs present them", () => {
+    const list = [entry({ host: "münchen.example" })]
+    expect(check(list, new URL("https://münchen.example/").hostname, 443)).toBe("allow")
+  })
+
+  test("a port-restricted entry does not match an unknown port", () => {
+    const list = [entry({ host: "llm.corp.example", ports: [443] })]
+    expect(check(list, "llm.corp.example", undefined)).toBe("deny")
+    expect(check([entry({ host: "llm.corp.example" })], "llm.corp.example", undefined)).toBe("allow")
   })
 
   test("normalize strips brackets", () => {

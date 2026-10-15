@@ -46,6 +46,16 @@ group("extension bundle (Node)", () => {
       "tls.connect": "denied",
       "http.get": "denied",
       "https.request": "denied",
+      "http.request url + options": "denied",
+      "http.ClientRequest": "denied",
+      "https.Agent": "denied",
+      "http2.connect": "denied",
+      "dgram.send": "denied",
+      "dgram.Socket": "denied",
+      "http.globalAgent": "denied",
+      "https.globalAgent": "denied",
+      "tls.TLSSocket": "denied",
+      "net.Socket instanceof": "ok",
       global: "untouched",
     })
   }, 60_000)

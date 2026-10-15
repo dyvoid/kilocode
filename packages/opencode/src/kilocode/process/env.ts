@@ -11,5 +11,7 @@ export function model(extra?: NodeJS.ProcessEnv | null): Record<string, string> 
   delete env.KILO_CONFIG
   delete env.KILO_CONFIG_CONTENT
   delete env.KILO_CONFIG_DIR
+  // Restricted-egress build: the CLI's own proxy port allows app hosts; model-run commands get only the tools proxy.
+  delete env.KILO_HARDENING_CLI_PROXY
   return env
 }

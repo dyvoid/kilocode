@@ -15,11 +15,11 @@ export function redact(text: string) {
 export function audit(provider: string, query: string) {
   if (!config.websearch.audit) return
   const host = SEARCH_HOSTS[provider as Search] ?? provider
-  const target = path.join(path.dirname(file()), "search-audit.log")
   try {
+    const target = path.join(path.dirname(file()), "search-audit.log")
     mkdirSync(path.dirname(target), { recursive: true })
     appendFileSync(target, `${JSON.stringify({ time: new Date().toISOString(), host, query })}\n`)
   } catch (err) {
-    console.error(`[hardening] could not write ${target}:`, err)
+    console.error("[hardening] could not write the search audit log:", err)
   }
 }

@@ -2,6 +2,7 @@
 import real from "node:tls"
 import { socketTarget } from "../../guard"
 import { permit } from "../../policy"
+import { view } from "./view"
 
 export const connect = ((...args: unknown[]) => {
   const dest = socketTarget(args)
@@ -17,7 +18,6 @@ export const {
   DEFAULT_MAX_VERSION,
   DEFAULT_MIN_VERSION,
   Server,
-  TLSSocket,
   checkServerIdentity,
   createSecureContext,
   createServer,
@@ -25,4 +25,16 @@ export const {
   rootCertificates,
 } = real
 
-export default { ...real, connect }
+/** For `new tls.TLSSocket(...).connect(...)`: checked like tls.connect. */
+export class TLSSocket extends real.TLSSocket {
+  static override [Symbol.hasInstance](value: unknown) {
+    return value instanceof real.TLSSocket
+  }
+  override connect(...args: unknown[]) {
+    const dest = socketTarget(args)
+    if (dest) permit("app", dest.host, dest.port, "tls.TLSSocket.connect")
+    return (super.connect as (...args: unknown[]) => this)(...args)
+  }
+}
+
+export default view(real, { connect, TLSSocket })

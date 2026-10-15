@@ -4,12 +4,14 @@
  * the guard is installed would bypass it.
  */
 import { config } from "./config"
-import { apply, cliEnv, PROXY_APP } from "./env"
+import { apply, cliEnv, cliProxy, strayProxies } from "./env"
 import { install } from "./guard"
 import { Hardening } from "./index"
 import { assertConsistent } from "./policy"
 
 assertConsistent(config)
-apply(process.env, cliEnv(config))
+// Stray proxy variables are removed for child processes; Bun's own fetch has already read them (see wrapFetch).
+const stray = strayProxies(process.env, config)
+apply(process.env, { ...cliEnv(config), ...Object.fromEntries(stray.map((item) => [item.name, undefined])) })
 Hardening.activate()
-install({ scope: "app", proxy: process.env[PROXY_APP] || undefined })
+install({ scope: "cli", proxy: cliProxy(process.env), stray: stray.at(0)?.url })

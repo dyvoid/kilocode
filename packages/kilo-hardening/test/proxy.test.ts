@@ -51,8 +51,21 @@ group("proxy", () => {
 
   test("tunnels to loopback and refuses hosts off the allowlist", async () => {
     expect(await connect(proxy.url.tools, `127.0.0.1:${echo.port}`)).toContain("200")
-    expect(await connect(proxy.url.app, "blocked.invalid:443")).toContain("403")
-    expect(denials().at(-1)).toMatchObject({ host: "blocked.invalid", scope: "app", via: "proxy" })
+    expect(await connect(proxy.url.cli, "blocked.invalid:443")).toContain("403")
+    expect(denials().at(-1)).toMatchObject({ host: "blocked.invalid", scope: "cli", via: "proxy" })
+  })
+
+  test("each port has its own token, so the tools URL does not open the cli port", async () => {
+    const tools = new URL(proxy.url.tools)
+    const cli = new URL(proxy.url.cli)
+    expect(tools.password).not.toBe(cli.password)
+    cli.password = tools.password
+    expect(await connect(cli.href, `127.0.0.1:${echo.port}`)).toContain("407")
+  })
+
+  test("rejects out-of-range CONNECT ports instead of crashing", async () => {
+    expect(await connect(proxy.url.tools, "127.0.0.1:99999")).toContain("400")
+    expect(await connect(proxy.url.tools, "127.0.0.1:0")).toContain("400")
   })
 
   test("forwards plain http by absolute URL", async () => {
@@ -63,9 +76,9 @@ group("proxy", () => {
   test("Bun fetch sends the proxy credentials and gets a denial, not a 407", async () => {
     const before = denials().length
     // Bun surfaces a refused CONNECT as the proxy's own response.
-    const res = await fetch("https://blocked-by-proxy.invalid/", { proxy: proxy.url.app } as RequestInit)
+    const res = await fetch("https://blocked-by-proxy.invalid/", { proxy: proxy.url.cli } as RequestInit)
     expect(res.status).toBe(403)
-    expect(await res.text()).toContain("not on the app allowlist")
+    expect(await res.text()).toContain("not on the allowlist")
     expect(denials().length).toBe(before + 1)
     expect(denials().at(-1)?.host).toBe("blocked-by-proxy.invalid")
   })
@@ -73,7 +86,7 @@ group("proxy", () => {
   test("spawn env points children at the tools proxy and keeps loopback direct", () => {
     const env = buildSpawnEnv(proxy)
     expect(env.HTTPS_PROXY).toBe(proxy.url.tools)
-    expect(env.KILO_HARDENING_APP_PROXY).toBe(proxy.url.app)
+    expect(env.KILO_HARDENING_CLI_PROXY).toBe(proxy.url.cli)
     expect(env.NO_PROXY).toContain("127.0.0.1")
   })
 })

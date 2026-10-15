@@ -1,9 +1,11 @@
 // Bundled with esbuild.cjs (plugin + inject) and run under Node, as the VS Code extension is.
 // Uses the bare module names a bundled dependency would use.
+import dgram from "dgram"
 import http from "http"
+import http2 from "node:http2"
 import https from "node:https"
 import net from "net"
-import { connect as tlsConnect } from "node:tls"
+import { connect as tlsConnect, TLSSocket } from "node:tls"
 import WS from "ws"
 
 const blocked = "blocked.invalid"
@@ -31,6 +33,18 @@ await probe("net.Socket", () => new net.Socket().connect(443, blocked))
 await probe("tls.connect", () => tlsConnect({ host: blocked, port: 443 }))
 await probe("http.get", () => http.get(`http://${blocked}/`))
 await probe("https.request", () => https.request({ hostname: blocked }))
+await probe("http.request url + options", () => http.request(`http://127.0.0.1:${port}/`, { hostname: blocked }))
+await probe("http.ClientRequest", () => new http.ClientRequest(`http://${blocked}/`))
+await probe("https.Agent", () => new https.Agent().createConnection({ host: blocked, port: 443 }))
+await probe("http2.connect", () => http2.connect(`https://${blocked}`))
+await probe("dgram.send", () => dgram.createSocket("udp4").send("x", 53, blocked))
+await probe("dgram.Socket", () => new (dgram.Socket as unknown as new (opts: { type: string }) => dgram.Socket)({ type: "udp4" }).send("x", 53, blocked))
+await probe("http.globalAgent", () => http.globalAgent.createConnection({ host: blocked, port: 80 }))
+await probe("https.globalAgent", () => https.globalAgent.createConnection({ host: blocked, port: 443 }))
+await probe("tls.TLSSocket", () => new TLSSocket(new net.Socket()).connect(443, blocked))
+await probe("net.Socket instanceof", () => {
+  if (!(net.connect(port, "127.0.0.1").destroy() instanceof net.Socket)) throw new Error("not a Socket")
+})
 // The shared global is untouched: only this bundle's references are guarded.
 out.global = globalThis.fetch.name === "guarded" ? "patched" : "untouched"
 server.close()

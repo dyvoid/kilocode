@@ -18,7 +18,8 @@ function list(scope: Scope, cfg: Config = config) {
   return value
 }
 
-function deny(scope: Scope, host: string, via: string): never {
+/** Records and throws a denial. */
+export function deny(scope: Scope, host: string, via: string): never {
   record({ scope, host, via })
   throw new EgressDeniedError(host, scope, via)
 }
@@ -45,18 +46,26 @@ export async function permitAsync(scope: Scope, host: string, port: number | und
   deny(scope, value, via)
 }
 
-/** Parses a URL-like input and applies `permit`. Non-network schemes (data:, blob:, file:) pass. */
+const LOCAL = ["data:", "blob:", "file:"]
+const NETWORK = ["http:", "https:", "ws:", "wss:"]
+
+/** Local schemes pass; any scheme that is neither local nor http(s)/ws(s) (Bun's s3:, for one) is denied. */
+function scheme(scope: Scope, url: URL, via: string) {
+  if (LOCAL.includes(url.protocol)) return "local"
+  if (NETWORK.includes(url.protocol)) return "network"
+  return deny(scope, `${url.protocol}//${url.hostname}`, via)
+}
+
+/** Parses a URL-like input and applies `permit`. Local schemes (data:, blob:, file:) pass. */
 export function permitUrl(scope: Scope, input: string | URL, via: string) {
   const url = typeof input === "string" ? new URL(input) : input
-  if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return url
-  permit(scope, url.hostname, urlPort(url), via)
+  if (scheme(scope, url, via) === "network") permit(scope, url.hostname, urlPort(url), via)
   return url
 }
 
 export async function permitUrlAsync(scope: Scope, input: string | URL, via: string) {
   const url = typeof input === "string" ? new URL(input) : input
-  if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return url
-  await permitAsync(scope, url.hostname, urlPort(url), via)
+  if (scheme(scope, url, via) === "network") await permitAsync(scope, url.hostname, urlPort(url), via)
   return url
 }
 
@@ -65,4 +74,20 @@ export function assertConsistent(cfg: Config = config) {
   if (!cfg.provider) return
   const problem = validateEndpoint(cfg.provider.baseURL, "app", cfg)
   if (problem && !problem.includes("resolves into")) throw new Error(`hardening.config.json: provider.baseURL: ${problem}`)
+}
+
+/**
+ * Build-time notes on `allow.tools` entries the command sandbox cannot express (it takes exact host
+ * names and ports): IP, range and suffix entries are unreachable from sandboxed commands, and hosts
+ * without a port list are opened on 443 and 80 only. Counts only, for public build logs.
+ */
+export function sandboxNotes(cfg: Config = config) {
+  const tools = cfg.allow.tools
+  const named = tools.filter((item) => item.kind === "host" && !/^[\d.]+$|:/.test(item.host))
+  const unreachable = tools.length - named.length
+  const portless = named.filter((item) => !item.ports).length
+  return [
+    ...(unreachable > 0 ? [`${unreachable} allow.tools entr${unreachable === 1 ? "y is" : "ies are"} not reachable from sandboxed commands (IP, CIDR or suffix)`] : []),
+    ...(portless > 0 ? [`${portless} allow.tools host${portless === 1 ? "" : "s"} without a port list: sandboxed commands use 443 and 80 only`] : []),
+  ]
 }

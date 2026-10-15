@@ -29,13 +29,13 @@ export function record(input: Omit<Denial, "time" | "pid">) {
   const item = { time: new Date().toISOString(), pid: process.pid, ...input }
   seen.push(item)
   if (seen.length > 1000) seen.shift()
-  const target = file()
   try {
+    const target = file()
     mkdirSync(path.dirname(target), { recursive: true })
     appendFileSync(target, `${JSON.stringify(item)}\n`)
   } catch (err) {
     // Logging must never turn a denial into a different failure; report and move on.
-    console.error(`[hardening] could not write ${target}:`, err)
+    console.error("[hardening] could not write the egress log:", err)
   }
   return item
 }

@@ -14,9 +14,31 @@ export function normalize(host: string) {
 
 function ports(value: unknown) {
   if (value === undefined) return undefined
-  if (!Array.isArray(value) || value.some((port) => !Number.isInteger(port) || port < 1 || port > 65535))
-    throw new Error("ports must be an array of integers between 1 and 65535")
+  if (!Array.isArray(value) || value.length === 0 || value.some((port) => !Number.isInteger(port) || port < 1 || port > 65535))
+    throw new Error("ports must be a non-empty array of integers between 1 and 65535")
   return value as number[]
+}
+
+/**
+ * Validates and canonicalises a host or suffix from the build config: a four-part IPv4 address, an IPv6
+ * address, or a DNS name in ASCII (IDNs converted to punycode, as URLs present them). Short IPv4 forms
+ * ("10.1", "192.168") are rejected because parsers disagree on what they mean.
+ */
+function name(input: string, label: string) {
+  const value = normalize(input)
+  const fail = (why: string) => new Error(`invalid ${label} ${JSON.stringify(input)}: ${why}`)
+  if (/^[\d.]+$/.test(value)) {
+    if (!ipaddr.IPv4.isValidFourPartDecimal(value)) throw fail("use a four-part IPv4 address")
+    return value
+  }
+  if (value.includes(":")) {
+    if (!ipaddr.IPv6.isValid(value)) throw fail("not an IPv6 address (ports go in \"ports\")")
+    return value
+  }
+  if (/[/\\?#@%*\s]/.test(value)) throw fail("not a host name")
+  const ascii = URL.canParse(`http://${value}/`) ? new URL(`http://${value}/`).hostname : ""
+  if (!/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/.test(ascii)) throw fail("not a host name")
+  return ascii
 }
 
 /** Parses one allowlist entry: { host }, { suffix } or { cidr }, each with optional { ports }. */
@@ -26,22 +48,21 @@ export function entry(input: unknown): Entry {
   const keys = ["host", "suffix", "cidr"].filter((key) => key in item)
   if (keys.length !== 1) throw new Error("must have exactly one of host, suffix, cidr")
   const allowed = ports(item.ports)
-  if (typeof item.host === "string") {
-    const host = normalize(item.host)
-    if (!host || host.includes("/") || host.includes("*")) throw new Error(`invalid host ${JSON.stringify(item.host)}`)
-    return { kind: "host", host, ports: allowed }
-  }
+  if (typeof item.host === "string") return { kind: "host", host: name(item.host, "host"), ports: allowed }
   if (typeof item.suffix === "string") {
-    const suffix = normalize(item.suffix).replace(/^\./, "")
-    if (!suffix.includes(".") || suffix.includes("*")) throw new Error(`invalid suffix ${JSON.stringify(item.suffix)}`)
+    const suffix = name(item.suffix.trim().replace(/^\./, ""), "suffix")
+    if (!suffix.includes(".") || ipaddr.isValid(suffix)) throw new Error(`invalid suffix ${JSON.stringify(item.suffix)}`)
     return { kind: "suffix", suffix, ports: allowed }
   }
   if (typeof item.cidr === "string") {
-    try {
-      return { kind: "cidr", range: ipaddr.parseCIDR(item.cidr), text: item.cidr, ports: allowed }
-    } catch {
-      throw new Error(`invalid cidr ${JSON.stringify(item.cidr)}`)
-    }
+    const [base, bits] = item.cidr.split("/")
+    const valid =
+      bits !== undefined &&
+      Number(bits) > 0 &&
+      (base.includes(":") ? ipaddr.IPv6.isValid(base) : ipaddr.IPv4.isValidFourPartDecimal(base)) &&
+      ipaddr.isValidCIDR(item.cidr)
+    if (!valid) throw new Error(`invalid cidr ${JSON.stringify(item.cidr)}: use a.b.c.d/n or an IPv6 range, n > 0`)
+    return { kind: "cidr", range: ipaddr.parseCIDR(item.cidr), text: item.cidr, ports: allowed }
   }
   throw new Error("host, suffix and cidr must be strings")
 }
@@ -65,8 +86,8 @@ export function loopback(host: string) {
 }
 
 function port(item: Entry, value: number | undefined) {
-  if (!item.ports || value === undefined) return true
-  return item.ports.includes(value)
+  if (!item.ports) return true
+  return value !== undefined && item.ports.includes(value)
 }
 
 function inside(item: Extract<Entry, { kind: "cidr" }>, ip: ipaddr.IPv4 | ipaddr.IPv6) {

@@ -7,7 +7,7 @@ import { ProviderError } from "@/provider/error"
 import { errorMessage } from "@/util/error"
 import { ProxyEnv } from "@/util/proxy-env"
 import { isRecord } from "@/util/record"
-import { permitUrl } from "@kilocode/kilo-hardening" // kilocode_change
+import { cliProxy, Hardening, loopback, permitUrl } from "@kilocode/kilo-hardening" // kilocode_change
 
 export const PROTOCOL_HEADER = "responses_websockets=2026-02-06"
 export const MESSAGE_TOO_BIG_CLOSE_CODE = 1009
@@ -88,8 +88,11 @@ export function connectResponsesWebSocket(options: ConnectResponsesWebSocketOpti
       typeof Bun === "undefined"
         ? undefined
         : ProxyEnv.getProxyForUrl(options.url.replace(/^wss:/, "https:").replace(/^ws:/, "http:"))
-    const connect = { headers, ...(proxy ? { proxy } : {}) }
-    permitUrl("app", options.url, "ws") // kilocode_change - the ws package bypasses the in-process guard under Bun
+    // kilocode_change start - restricted-egress build: the CLI's own traffic goes through its cli proxy, not the tools proxy in HTTP(S)_PROXY
+    const own = Hardening.off() && !loopback(new URL(options.url).hostname) ? cliProxy(process.env) : undefined
+    const connect = { headers, ...((own ?? proxy) ? { proxy: own ?? proxy } : {}) }
+    if (Hardening.off()) permitUrl("cli", options.url, "ws") // the ws package bypasses the in-process guard under Bun
+    // kilocode_change end
     const socket = new WebSocket(options.url, connect)
     const timeout = options.timeout
       ? setTimeout(() => {

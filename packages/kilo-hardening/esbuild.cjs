@@ -1,14 +1,14 @@
 // esbuild integration for the VS Code extension bundle.
 //
 // The extension host is shared with every other installed extension, so the hardened build must not
-// patch Node's modules or globals process-wide. Instead, imports of net/tls/http/https inside our own
+// patch Node's modules or globals process-wide. Instead, imports of net/tls/http(s)/http2/dgram inside our own
 // bundle (including bundled dependencies such as `ws`) resolve to guarded shims, and free references
 // to `fetch` / `WebSocket` are rewritten to guarded versions via esbuild's `inject`.
 const path = require("node:path")
 
 const src = path.join(__dirname, "src")
 const shims = path.join(src, "node", "shim")
-const modules = new Set(["net", "tls", "http", "https"])
+const modules = new Set(["net", "tls", "http", "https", "http2", "dgram"])
 
 const plugin = {
   name: "kilo-hardening",
@@ -18,7 +18,7 @@ const plugin = {
       if (args.importer.startsWith(src + path.sep)) return undefined
       return { path: path.join(shims, "vscode.cjs") }
     })
-    build.onResolve({ filter: /^(node:)?(net|tls|http|https)$/ }, (args) => {
+    build.onResolve({ filter: /^(node:)?(net|tls|http|https|http2|dgram)$/ }, (args) => {
       // The shims and the guard itself need the real modules.
       if (args.importer.startsWith(src + path.sep)) return undefined
       const name = args.path.replace(/^node:/, "")

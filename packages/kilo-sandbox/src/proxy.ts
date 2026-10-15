@@ -10,6 +10,12 @@ import { normalizeDestinations, parseDestination, resolveDestination } from "./d
 import type { Profile } from "./profile"
 import { TlsClientHello } from "./tls-client-hello"
 
+/**
+ * Names the vetted host on connections dialled by resolved address, so a restricted-egress build's
+ * in-process guard checks the name rather than the address (see @kilocode/kilo-hardening guard).
+ */
+const CHECKED = Symbol.for("kilo.hardening.checked")
+
 export interface ProxyRuntime {
   readonly url: string
   readonly token: string
@@ -154,7 +160,7 @@ export async function startProxy(
         dialing = true
         void resolve(dest).then((resolved) => {
           if (client.destroyed) return
-          upstream = connect({ host: resolved.address, port: dest.port, family: resolved.family })
+          upstream = connect(Object.assign({ host: resolved.address, port: dest.port, family: resolved.family }, { [CHECKED]: dest.host }))
           upstream.on("error", fail)
           upstream.once("connect", () => {
             if (!upstream || client.destroyed) {
@@ -198,15 +204,18 @@ export async function startProxy(
       const resolved = await resolve(dest)
       const send = url.protocol === "https:" ? requestHttps : requestHttp
       const upstream = send(
-        {
-          hostname: resolved.address,
-          family: resolved.family,
-          port: dest.port,
-          servername: dest.host,
-          method: request.method,
-          path: `${url.pathname}${url.search}`,
-          headers: headers(request.headers, url.host),
-        },
+        Object.assign(
+          {
+            hostname: resolved.address,
+            family: resolved.family,
+            port: dest.port,
+            servername: dest.host,
+            method: request.method,
+            path: `${url.pathname}${url.search}`,
+            headers: headers(request.headers, url.host),
+          },
+          { [CHECKED]: dest.host },
+        ),
         (incoming) => {
           response.writeHead(incoming.statusCode ?? 502, headers(incoming.headers))
           incoming.pipe(response)

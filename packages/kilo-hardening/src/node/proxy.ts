@@ -9,7 +9,7 @@ import { allowsAddress, check, normalize, type Entry } from "../match"
 
 export interface ProxyHandle {
   /** Proxy URLs with credentials, e.g. http://kilo:<token>@127.0.0.1:<port> */
-  url: Record<Scope, string>
+  url: Record<"cli" | "tools", string>
   close(): Promise<void>
 }
 
@@ -58,10 +58,11 @@ function refuse(socket: Duplex, status: string, body = "") {
 }
 
 function blocked(scope: Scope, host: string) {
-  return `Blocked by the restricted-egress build: ${host} is not on the ${scope} allowlist.\n`
+  return `Blocked by the restricted-egress build: ${host} is not on the ${scope === "cli" ? "" : `${scope} `}allowlist.\n`
 }
 
 function server(scope: Scope, list: readonly Entry[], token: string, resolve: ProxyOptions["resolve"]) {
+  const tunnels = new Set<Duplex>()
   const srv = http.createServer(async (req, res) => {
     // Plain-HTTP forward proxying: the request line carries an absolute URL.
     if (!authorized(req.headers["proxy-authorization"], token)) {
@@ -80,6 +81,7 @@ function server(scope: Scope, list: readonly Entry[], token: string, resolve: Pr
       res.writeHead(403, { "Content-Type": "text/plain" }).end(blocked(scope, normalize(url.hostname)))
       return
     }
+    if (req.destroyed) return
     const headers = { ...req.headers }
     delete headers["proxy-authorization"]
     delete headers["proxy-connection"]
@@ -94,6 +96,7 @@ function server(scope: Scope, list: readonly Entry[], token: string, resolve: Pr
       if (!res.headersSent) res.writeHead(502, { "Content-Type": "text/plain" })
       res.end(`Upstream error: ${err.message}\n`)
     })
+    res.on("close", () => upstream.destroy())
     req.pipe(upstream)
   })
 
@@ -103,29 +106,39 @@ function server(scope: Scope, list: readonly Entry[], token: string, resolve: Pr
       refuse(socket, '407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="kilo"')
       return
     }
-    const match = /^\[?([^\]]+?)\]?:(\d+)$/.exec(req.url ?? "")
-    if (!match) {
+    const match = /^\[?([^\]]+?)\]?:(\d{1,5})$/.exec(req.url ?? "")
+    const port = Number(match?.[2])
+    if (!match || port < 1 || port > 65535) {
       refuse(socket, "400 Bad Request")
       return
     }
     const host = normalize(match[1])
-    const port = Number(match[2])
     const dial = await destination(list, host, port, resolve)
     if (!dial) {
       record({ scope, host, via: "proxy" })
       refuse(socket, "403 Forbidden", blocked(scope, host))
       return
     }
+    if (socket.destroyed) return
+    tunnels.add(socket)
+    let open = false
     const upstream = net.connect({ host: dial, port }, () => {
+      open = true
       socket.write("HTTP/1.1 200 Connection Established\r\n\r\n")
       if (head.length > 0) upstream.write(head)
       upstream.pipe(socket)
       socket.pipe(upstream)
     })
-    upstream.on("error", (err) => refuse(socket, "502 Bad Gateway", `Upstream error: ${err.message}\n`))
-    socket.on("close", () => upstream.destroy())
+    upstream.on("error", (err) => {
+      if (open) socket.destroy()
+      else refuse(socket, "502 Bad Gateway", `Upstream error: ${err.message}\n`)
+    })
+    socket.on("close", () => {
+      tunnels.delete(socket)
+      upstream.destroy()
+    })
   })
-  return srv
+  return { srv, tunnels }
 }
 
 function listen(srv: http.Server) {
@@ -135,24 +148,30 @@ function listen(srv: http.Server) {
   return ready.promise
 }
 
-/** Starts the app and tools proxies on random loopback ports. */
+/**
+ * Starts the proxies on random loopback ports: `cli` (app and tools hosts) for the CLI's own fetches,
+ * `tools` for the commands the model runs. Each port has its own token, so a command that reads the
+ * tools proxy URL from its environment cannot use the cli port.
+ */
 export async function startProxy(opts: ProxyOptions = {}): Promise<ProxyHandle> {
   const cfg = opts.config ?? config
-  const token = randomBytes(24).toString("hex")
+  const tokens = { cli: randomBytes(24).toString("hex"), tools: randomBytes(24).toString("hex") }
   const servers = {
-    app: server("app", entries(cfg, "app"), token, opts.resolve),
-    tools: server("tools", entries(cfg, "tools"), token, opts.resolve),
+    cli: server("cli", entries(cfg, "cli"), tokens.cli, opts.resolve),
+    tools: server("tools", entries(cfg, "tools"), tokens.tools, opts.resolve),
   }
-  const ports = { app: await listen(servers.app), tools: await listen(servers.tools) }
-  const url = (port: number) => `http://${USER}:${token}@127.0.0.1:${port}`
+  const ports = { cli: await listen(servers.cli.srv), tools: await listen(servers.tools.srv) }
+  const url = (port: number, token: string) => `http://${USER}:${token}@127.0.0.1:${port}`
   return {
-    url: { app: url(ports.app), tools: url(ports.tools) },
+    url: { cli: url(ports.cli, tokens.cli), tools: url(ports.tools, tokens.tools) },
     async close() {
       await Promise.all(
-        Object.values(servers).map((srv) => {
+        Object.values(servers).map((item) => {
           const done = Promise.withResolvers<void>()
-          srv.closeAllConnections()
-          srv.close(() => done.resolve())
+          // CONNECT tunnels are detached from the server and would outlive close().
+          for (const socket of item.tunnels) socket.destroy()
+          item.srv.closeAllConnections()
+          item.srv.close(() => done.resolve())
           return done.promise
         }),
       )

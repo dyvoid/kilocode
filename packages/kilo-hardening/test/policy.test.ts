@@ -40,6 +40,27 @@ group("config", () => {
     expect(cfg.provider).toEqual({ id: "llm", name: "LLM", baseURL: "http://127.0.0.1:1234/v1", models: { qwen: { name: "qwen" } } })
   })
 
+  test("provider values are checked when the config is parsed", () => {
+    expect(() => variant({ provider: { baseURL: "llm.corp.example" } })).toThrow("provider.baseURL")
+    expect(() => variant({ provider: { baseURL: "ftp://llm.corp.example/" } })).toThrow("provider.baseURL")
+    expect(() => variant({ provider: { baseURL: "http://127.0.0.1/v1", models: { m: { limit: {} } } } })).toThrow("limit.context")
+    expect(() => variant({ provider: { baseURL: "http://127.0.0.1/v1", models: { m: { limit: { context: 8192, output: "x" } } } } })).toThrow(
+      "limit.output",
+    )
+  })
+
+  test("build notes count tools entries the command sandbox cannot express", async () => {
+    const { sandboxNotes } = await import("../src/policy")
+    const cfg = variant({
+      allow: { tools: [{ host: "git.corp.example" }, { host: "api.corp.example", ports: [443] }, { cidr: "10.0.0.0/8" }, { suffix: "corp.example" }, { host: "10.1.2.3" }] },
+    })
+    expect(sandboxNotes(cfg)).toEqual([
+      "3 allow.tools entries are not reachable from sandboxed commands (IP, CIDR or suffix)",
+      "1 allow.tools host without a port list: sandboxed commands use 443 and 80 only",
+    ])
+    expect(sandboxNotes(variant({}))).toEqual([])
+  })
+
   test("committed default config is valid and self-consistent", () => {
     expect(config.identity.name).toMatch(/^[a-z0-9-]+$/)
     expect(() => assertConsistent()).not.toThrow()

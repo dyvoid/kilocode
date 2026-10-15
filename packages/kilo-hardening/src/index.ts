@@ -4,7 +4,9 @@ export { config, entries, parse, SEARCH_HOSTS, type Config, type Scope, type Sea
 export { EgressDeniedError, findEgressDenied, isEgressDenied } from "./error"
 export { denials, file as logFile, record, type Denial } from "./log"
 export { check, describe, entry, loopback, normalize, type Entry } from "./match"
-export { assertConsistent, permit, permitAsync, permitUrl, permitUrlAsync, validateEndpoint } from "./policy"
+export { SCOPE as FETCH_SCOPE } from "./fetch"
+export { cliProxy } from "./env"
+export { assertConsistent, permit, permitAsync, permitUrl, permitUrlAsync, sandboxNotes, validateEndpoint } from "./policy"
 export { audit, redact } from "./search"
 
 const key = Symbol.for("kilo.hardening.active")
